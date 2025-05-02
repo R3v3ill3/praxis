@@ -1,3 +1,4 @@
+// backend-node/routes/campaign-assistant.js
 import express from 'express';
 import OpenAI from 'openai';
 import dotenv from 'dotenv';
@@ -8,20 +9,72 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
-// Detect summary ending if no structured JSON is returned
+// --- Function to parse structured data from AI text ---
+function parseStructuredSummary(text) {
+    const summary = {};
+    // Use a Map to preserve insertion order for goals if needed, or just an array
+    const goals = [];
+    let collectingGoals = false; // Flag to indicate if we are currently parsing goals
+
+    const lines = text.split('\n');
+
+    lines.forEach(line => {
+        const trimmedLine = line.trim();
+
+        // Reset goal collection if we hit the final marker or a new section
+        if (trimmedLine.startsWith('✅ Final summary complete') || (trimmedLine.startsWith('- **') && !trimmedLine.startsWith('- **Goals:**'))) {
+            collectingGoals = false;
+        }
+
+        if (trimmedLine.startsWith('- **Purpose:**')) {
+            summary.purpose = trimmedLine.substring('- **Purpose:**'.length).trim();
+        } else if (trimmedLine.startsWith('- **Audience:**')) {
+            summary.audience = trimmedLine.substring('- **Audience:**'.length).trim();
+        } else if (trimmedLine.startsWith('- **Target:**')) {
+            summary.target = trimmedLine.substring('- **Target:**'.length).trim();
+        } else if (trimmedLine.startsWith('- **Intent:**')) {
+            summary.intent = trimmedLine.substring('- **Intent:**'.length).trim();
+        } else if (trimmedLine.startsWith('- **Location:**')) {
+            summary.location = trimmedLine.substring('- **Location:**'.length).trim();
+        } else if (trimmedLine.startsWith('- **Problem:**')) {
+            summary.problem = trimmedLine.substring('- **Problem:**'.length).trim();
+        } else if (trimmedLine.startsWith('- **Goals:**')) {
+            collectingGoals = true; // Start collecting goals from the next lines
+        } else if (collectingGoals && /^\s*\d+\.\s/.test(trimmedLine)) {
+            // If collecting goals and line starts with "1. ", "2. ", etc.
+            const goalMatch = trimmedLine.match(/^\s*\d+\.\s*(.*)/);
+            if (goalMatch && goalMatch[1]) {
+                goals.push(goalMatch[1].trim()); // Add goal to array, order implies rank
+            }
+        }
+    });
+
+    // Assign collected goals if any were found
+    if (goals.length > 0) {
+        summary.goals = goals; // Store as an ordered array
+    }
+
+    // Check if essential fields were parsed
+    // Make goals optional for structure check initially, as AI might sometimes fail format
+    if (summary.purpose && summary.audience && summary.target) {
+        summary.structured = true; // Mark as successfully parsed
+        // Ensure goals array exists, even if empty, if structured
+        if (!summary.goals) {
+             summary.goals = [];
+        }
+        return summary;
+    }
+    // Return null only if core fields (purpose, audience, target) are missing
+    return null;
+}
+// --- END NEW FUNCTION ---
+
+
+// Detect summary ending phrase
 function detectFinalSummaryMessage(message) {
   if (!message) return false;
-  const lower = message.toLowerCase();
-  return (
-    lower.includes("✅ final summary complete") ||
-    lower.includes("here's the final summary") ||
-    lower.includes("summary of your campaign") ||
-    lower.includes("you're ready to start making real change") ||
-    lower.includes("this could be a powerful campaign") ||
-    lower.includes("you've got this") ||
-    lower.includes("final summary") ||
-    lower.includes("campaign overview")
-  );
+  // Use only the explicit marker for reliability
+  return message.includes("✅ Final summary complete");
 }
 
 router.post('/', async (req, res) => {
@@ -33,67 +86,61 @@ router.post('/', async (req, res) => {
       return res.status(400).json({ error: 'Missing input' });
     }
 
+    // --- MODIFIED SYSTEM PROMPT ---
     const messages = [
       {
         role: 'system',
         content: `
-You are a sharp, confident, and experienced campaign strategist who works with unions and progressive organisations. You speak in a natural, conversational tone — like an organiser who’s been there before and knows what it takes to win.
+You are a sharp, confident, and experienced campaign strategist working with unions and progressive organisations. Speak conversationally, like an organiser.
 
-Your job is to guide users through a quick conversation to understand their campaign, classify it, and prepare it for planning.
+Your job is to guide users to define their campaign by collecting key details.
 
-You start every conversation as if you’re talking to someone who wants to make change happen — and might need a little help turning that energy into strategy.
+Start by asking what they are working on. Assume union context if workplace issues (pay, safety, rosters, voice, management) are mentioned. Be persuasive about union power.
 
-⸻
+Ask only 1–2 questions at a time. Always clarify:
+- Audience: Who to involve/mobilise (coworkers, members, public)?
+- Target: Who holds power for the change (boss, CEO, board, government)? Explain the difference clearly.
 
-When a campaign involves pay, safety, rosters, workplace voice, or management decisions — assume it’s a union campaign. Don’t wait to be told.
+Your goal is to collect:
+- purpose: The main aim (e.g., win pay rise, stop cuts).
+- audience: Who to involve.
+- target: Who has power.
+- intent: "growth" (recruitment, engagement, fundraising) or "change" (winning a demand).
+- location: Where it's happening.
+- problem: What's driving the campaign (optional).
+- goals: Ask the user for their **top 1-4 goals for THIS campaign, IN ORDER OF PRIORITY.** List them clearly using numbers (1., 2., 3., 4.). Choose from: participation, membership, activism, donation, sales, vote, corporate decision, political decision, issue awareness, issue support.
 
-Talk like someone who knows that union power works. Use language like:
-  • “Sounds like a union campaign to me — are you already organised, or is this a chance to build?”
-  • “Power starts with people — do you already have union members on board?”
-  • “This might be the perfect time to recruit your coworkers.”
-  • “Let’s figure out if you’re ready to take action or need to build support first.”
+When finished, format the summary EXACTLY like this example:
 
-Never be neutral about organising. If the user describes workplace problems, help them connect that to union strength. Be strategic and persuasive — you’re here to help them win.
+Here is the summary:
 
-⸻
+- **Purpose:** Win a fair pay rise for warehouse staff.
+- **Audience:** Warehouse workers at ACME Corp.
+- **Target:** ACME Corp CEO.
+- **Intent:** change
+- **Location:** ACME Warehouse, Brisbane.
+- **Problem:** Stagnant wages despite high profits.
+- **Goals:**
+  1. Corporate decision (achieve the pay rise)
+  2. Membership (recruit non-members during the campaign)
+  3. Participation (get high member involvement in actions)
 
-Ask only 1–2 questions at a time, and always clarify two distinct roles:
-  • Audience: who do they want to involve or mobilise? (e.g. coworkers, union members, customers)
-  • Target: who holds the power to make the change? (e.g. boss, company execs, government)
-
-When asking about audience and target, always explain the difference like this:
-  • “Let’s break it down:
-     - Who do you want to join or support the campaign with you? That’s your audience — often coworkers or the public.
-     - And who has the power to make the change — like approving the pay rise or stopping the cuts? That’s your target — usually a manager, board, or government.”
-
-⸻
-
-Your goal is to collect the following structured summary:
-  • purpose: what does this campaign aim to achieve? (e.g. win a pay rise, stop a restructure)
-  • audience: who will be involved or mobilised?
-  • target: who has the power to make the change?
-  • intent: “growth” (recruitment, engagement, fundraising) or “change” (winning a demand)
-  • location: where is this happening? (e.g. hospital, warehouse, city/state)
-  • problem: what’s driving the campaign (optional)
-  • goals: up to 4 ranked goals, selected from:
-    participation, membership, activism, donation, vote, corporate decision, political decision, issue awareness, issue support
-
-⸻
-
-When you believe you have collected all necessary information, clearly conclude the conversation by typing exactly:
+Then, conclude EXACTLY with this phrase on a new line, with no extra text:
 ✅ Final summary complete
-Do not add any extra commentary after this phrase.
         `.trim(),
       },
+      // Map history, ensuring roles are 'user' or 'assistant'
       ...history.map((msg) => ({
-        role: msg.role,
+        role: msg.role === 'user' ? 'user' : 'assistant',
         content: msg.content,
       })),
       { role: 'user', content: input },
     ];
+    // --- END MODIFIED SYSTEM PROMPT ---
+
 
     const completion = await openai.chat.completions.create({
-      model: 'gpt-4o',
+      model: 'gpt-4o', // Or your preferred model
       messages,
       temperature: 0.7,
     });
@@ -105,27 +152,49 @@ Do not add any extra commentary after this phrase.
       return res.status(500).json({ error: 'AI returned empty response.' });
     }
 
-    let parsed;
-    try {
-      parsed = JSON.parse(rawMessage);
+    const isFinalSummary = detectFinalSummaryMessage(rawMessage);
+    let responsePayload = {};
 
-      if (!parsed.aiMessage) {
-        parsed.aiMessage = rawMessage;
-      }
+    if (isFinalSummary) {
+        console.log(`[campaign-assistant] INFO: Final summary detected. Attempting to parse structure.`);
+        const parsedSummary = parseStructuredSummary(rawMessage);
 
-      console.log('✅ Parsed structured response with done =', parsed.done ?? 'undefined');
-      return res.status(200).json(parsed);
-    } catch (err) {
-      const isFinalSummary = detectFinalSummaryMessage(rawMessage);
-      console.log(`🧠 Raw response detected. Done = ${isFinalSummary}. Message preview:`, rawMessage.slice(0, 120));
-      return res.status(200).json({
-        aiMessage: rawMessage,
-        done: isFinalSummary,
-      });
+        if (parsedSummary) {
+            console.log(`[campaign-assistant] INFO: Successfully parsed structured summary (Goals order implies rank):`, parsedSummary.goals);
+            responsePayload = {
+                ...parsedSummary, // Includes purpose, audience, target, goals (ordered array), etc.
+                aiMessage: rawMessage,
+                done: true,
+                structured: true
+            };
+        } else {
+            console.warn(`[campaign-assistant] WARN: Failed to parse structure from final summary text.`);
+            responsePayload = {
+                aiMessage: rawMessage,
+                done: true,
+                structured: false
+            };
+        }
+    } else {
+        console.log(`[campaign-assistant] INFO: Assistant response is not final summary.`);
+        responsePayload = {
+            aiMessage: rawMessage,
+            done: false,
+            structured: false
+        };
     }
+
+    console.log("[campaign-assistant] INFO: Sending response to frontend:", responsePayload);
+    return res.status(200).json(responsePayload);
+
   } catch (err) {
-    console.error('❌ Error in /campaign-assistant:', err);
-    return res.status(500).json({ error: 'AI assistant failed.' });
+    console.error('❌ Error in /campaign-assistant:', err.stack || err);
+    if (err instanceof OpenAI.APIError) {
+         console.error('OpenAI API Error Status:', err.status);
+         console.error('OpenAI API Error Headers:', err.headers);
+         console.error('OpenAI API Error Body:', err.error);
+    }
+    return res.status(500).json({ error: 'AI assistant failed. ' + err.message });
   }
 });
 

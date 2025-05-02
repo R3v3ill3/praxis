@@ -17,15 +17,22 @@ export default function CampaignBuilder() {
 
   // Reset local state and context if starting fresh
   useEffect(() => {
+      // --- DEBUG LOG ---
+      console.log("[CampaignBuilder useEffect] Running effect, resetting campaign data.");
+      // --- END DEBUG LOG ---
       resetCampaignData(); // Clear any previous campaign data on mount
       // Add any other initial message logic if needed
        setHistory([{ role: 'assistant', content: "What kind of campaign are you working on? Tell me what’s going on at your workplace or in your community." }]);
-  }, [resetCampaignData]);
+  }, []); // Use empty dependency array to run only once on mount
 
 
   const handleSendMessage = async () => {
-    if (!input.trim()) return;
+    // --- DEBUG LOG ---
+    console.log("[handleSendMessage] Function called. Input:", input);
+    // --- END DEBUG LOG ---
 
+    if (!input.trim()) return;
+       console.log("[handleSendMessage] Input is empty, exiting.");
     const userMessage = { role: 'user', content: input };
     const newHistory = [...history, userMessage];
     setHistory(newHistory); // Update local history for display

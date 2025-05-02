@@ -110,7 +110,7 @@ export default function Dashboard() {
 
       {/* Button to start new campaign - Ensure path matches App.jsx */}
       <button
-        onClick={() => navigate('/campaign/new')}
+        onClick={() => navigate('/app/campaign/new')}
         className="bg-indigo-600 text-white px-4 py-2 rounded hover:bg-indigo-700"
       >
         Start a New Campaign
