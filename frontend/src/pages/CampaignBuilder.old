@@ -3,15 +3,15 @@ import { useNavigate } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { campaignDefinitionSchema } from '../../schemas/campaignDefinitionSchema';
-import { Button } from '../../components/ui/Button';
-import { Input } from '../../components/ui/Input';
-import { Textarea } from '../../components/ui/Textarea';
-import { Form, FormItem, FormLabel, FormControl, FormMessage, FormField } from '../../components/ui/Form';
-import { useToast } from '../../components/ui/use-toast';
-import { useCampaign, updateCampaignData, resetCampaignData } from '../../contexts/CampaignContext';
-import { Separator } from '../../components/ui/Separator';
-import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/Card';
-import { Skeleton } from '../../components/ui/Skeleton';
+import { Button } from '../../components/ui/Button'; // Corrected path
+import { Input } from '../../components/ui/Input'; // Corrected path
+import { Textarea } from '../../components/ui/Textarea'; // Corrected path
+import { Form, FormItem, FormLabel, FormControl, FormMessage, FormField } from '../../components/ui/Form'; // Corrected path
+import { useToast } from '../../components/ui/use-toast'; // Corrected path
+import { useCampaign, updateCampaignData, resetCampaignData } from '@/contexts/CampaignContext';
+import { Separator } from '../../components/ui/Separator'; // Corrected path
+import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/Card'; // Corrected path
+import { Skeleton } from '../../components/ui/Skeleton'; // Corrected path
 
 const CampaignBuilder = () => {
     const { campaignData, dispatch } = useCampaign();
