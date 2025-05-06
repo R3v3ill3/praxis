@@ -1,7 +1,7 @@
 // frontend/src/pages/Dashboard.jsx
 import React, { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom'; // Added Link
-import { useAuth } from '../context/AuthContext.jsx'; // Use .jsx extension
+import { useAuth } from '../contexts/AuthContext.jsx'; // Use .jsx extension
 import { db } from '../firebase'; // Import client Firestore
 import { doc, getDoc } from 'firebase/firestore';
 import axios from 'axios'; // For calling backend API

@@ -1,7 +1,7 @@
 // frontend/src/pages/CampaignReviewSave.jsx
 import React, { useState } from 'react';
-import { useCampaign } from '../context/CampaignContext';
-import { useAuth } from '../context/AuthContext';
+import { useCampaign } from '../contexts/CampaignContext';
+import { useAuth } from '../contexts/AuthContext';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
 

@@ -17,9 +17,10 @@
     "react-hook-form": "^7.56.1",
     "react-router-dom": "^6.16.0",
     "sonner": "^2.0.3",
-    "zod": "^3.24.3"
+    "zod": "^3.24.4"
   },
   "devDependencies": {
+    "@vitejs/plugin-react": "^4.4.1",
     "autoprefixer": "^10.4.21",
     "postcss": "^8.4.21",
     "serve": "^14.2.4",

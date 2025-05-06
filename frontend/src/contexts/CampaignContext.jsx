@@ -11,7 +11,6 @@ export const CampaignProvider = ({ children }) => {
         classification: null,
         plan: null,
         messagingGuide: null,
-        // Add other relevant fields as needed, e.g., campaignName
         name: '',
     });
 
@@ -33,8 +32,8 @@ export const CampaignProvider = ({ children }) => {
 
     const value = {
         campaignData,
-        updateCampaignData,
-        resetCampaignData,
+        updateCampaignData, // <-- updateCampaignData is defined here
+        resetCampaignData, // <-- resetCampaignData is defined here
     };
 
     return (
@@ -43,3 +42,6 @@ export const CampaignProvider = ({ children }) => {
         </CampaignContext.Provider>
     );
 };
+
+// The file only exports useCampaign and CampaignProvider
+// export { useCampaign, CampaignProvider }; // Implicitly exported due to `export const` above

@@ -1,7 +1,7 @@
 // frontend/src/pages/CampaignMessagingGuide.jsx
 import React, { useEffect, useState } from 'react';
 import axios from 'axios';
-import { useCampaign } from '../context/CampaignContext'; // Import context hook
+import { useCampaign } from '../contexts/CampaignContext'; // Import context hook
  import { useNavigate } from 'react-router-dom';
 
 export default function CampaignMessagingGuide() {

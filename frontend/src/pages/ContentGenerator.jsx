@@ -1,5 +1,5 @@
 import React from 'react';
-import { useCampaign } from '../context/CampaignContext'; // Or load specific campaign
+import { useCampaign } from '../contexts/CampaignContext'; // Or load specific campaign
 import { Link } from 'react-router-dom';
 
 export default function ContentGenerator() {

@@ -8,17 +8,13 @@ import { Input } from '../components/ui/Input';
 import { Textarea } from '../components/ui/Textarea';
 import { Form, FormItem, FormLabel, FormControl, FormMessage, FormField } from '../components/ui/Form';
 import { useToast } from '../components/ui/use-toast';
-// --- CORRECT IMPORT FROM CAMPAIGN CONTEXT ---
 import { useCampaign } from '../contexts/CampaignContext';
-// ------------------------------------------
 import { Separator } from '../components/ui/Separator';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/Card';
 import { Skeleton } from '../components/ui/Skeleton';
 
 const CampaignBuilder = () => {
-    // --- CORRECT HOOK DESTRUCTURING ---
     const { campaignData, updateCampaignData, resetCampaignData } = useCampaign();
-    // --------------------------------
     const navigate = useNavigate();
     const { toast } = useToast();
     const [isAssistantThinking, setIsAssistantThinking] = useState(false);
@@ -68,9 +64,8 @@ const CampaignBuilder = () => {
             console.log('[CampaignBuilder] AI Assistant Response:', data);
             setAssistantResponse(data.response);
 
-            // --- CORRECT USAGE OF UPDATE FUNCTION ---
-            updateCampaignData({ summary: data.summary });
-            // -----------------------------------
+            // Update Campaign Context with AI summary
+            dispatch(updateCampaignData({ summary: data.summary }));
             console.log('[CampaignBuilder] Campaign Context Updated (after AI):', campaignData);
 
             // Trigger campaign classification
@@ -100,7 +95,7 @@ const CampaignBuilder = () => {
                 headers: {
                     'Content-Type': 'application/json',
                 },
-                body: JSON.stringify(summary), // Assuming summary is what the classification API expects
+                body: JSON.stringify(summary),
             });
 
             if (!response.ok) {
@@ -116,9 +111,7 @@ const CampaignBuilder = () => {
 
             const data = await response.json();
             console.log('[CampaignBuilder] Classification Result:', data);
-            // --- CORRECT USAGE OF UPDATE FUNCTION ---
-            updateCampaignData({ classification: data });
-            // -----------------------------------
+            dispatch(updateCampaignData({ classification: data }));
             console.log('[CampaignBuilder] Campaign Context Updated (after classification):', campaignData);
             setShowClassification(true);
 
@@ -136,26 +129,24 @@ const CampaignBuilder = () => {
         navigate('/campaign/plan');
     };
 
-    // --- CORRECTED useEffect HOOK TO PREVENT LOOP ---
     useEffect(() => {
-        console.log('[CampaignBuilder] Component mounted.'); // Log on mount
-        if (campaignData.summary === null) {
-             console.log('[CampaignBuilder useEffect] Initial state has null summary, resetting campaign data.');
-             resetCampaignData();
-             console.log('[CampaignBuilder] Initial Campaign Context Reset.');
-         } else {
-             console.log('[CampaignBuilder useEffect] Component mounted with existing summary, not resetting.');
+        console.log('[CampaignBuilder] Component rendering...', campaignData);
+        // Only reset if summary is null (initial load or explicit reset)
+        if (!campaignData.summary) {
+            console.log('[CampaignBuilder useEffect] Running effect, resetting campaign data.');
+            dispatch(resetCampaignData());
+            console.log('[CampaignBuilder] Campaign Context Reset.');
+        } else {
+            console.log('[CampaignBuilder useEffect] Summary exists, skipping reset.');
         }
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []); // <-- Empty dependency array: runs only ONCE on mount
+        // Empty dependency array means this should only run on mount and unmount
+    }, [dispatch, campaignData.summary]);
 
-    // --- Keep the useEffect for scrolling ---
     useEffect(() => {
         if (responseContainerRef.current) {
             responseContainerRef.current.scrollTop = responseContainerRef.current.scrollHeight;
         }
-    }, [assistantResponse]); // Dependency on assistantResponse
-
+    }, [assistantResponse]);
 
     return (
         <div className="container py-8">
@@ -166,9 +157,7 @@ const CampaignBuilder = () => {
                 </CardHeader>
                 <CardContent>
                     <Form {...form}>
-                         {/* Correct native form nesting */}
                         <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-                            {/* Form Fields */}
                             <FormField
                                 control={form.control}
                                 name="purpose"
@@ -215,7 +204,7 @@ const CampaignBuilder = () => {
                                     <FormItem>
                                         <FormLabel>What is the primary intent behind this campaign (inform, persuade, mobilize)?</FormLabel>
                                         <FormControl>
-                                            <Input placeholder="e.g., To educate the public, to convince undecided voters, to engage in participation" {...field} />
+                                            <Input placeholder="e.g., To educate the public, to convince undecided voters, to encourage participation" {...field} />
                                         </FormControl>
                                         <FormMessage />
                                     </FormItem>
@@ -234,14 +223,12 @@ const CampaignBuilder = () => {
                                     </FormItem>
                                 )}
                             />
-                            {/* Submit Button */}
                             <Button type="submit" disabled={isAssistantThinking}>
                                 {isAssistantThinking ? 'Thinking...' : 'Get Campaign Insights'}
                             </Button>
-                        </form> {/* <-- Closing native form tag */}
-                    </Form> {/* <-- Closing custom Form component tag */}
+                        </form>
+                    </Form>
 
-                    {/* Assistant Response Display */}
                     {assistantResponse && (
                         <div ref={responseContainerRef} className="mt-6 p-4 border rounded-md bg-gray-50 overflow-y-auto max-h-96">
                             <h3 className="text-lg font-semibold mb-2">AI Assistant Summary:</h3>
@@ -249,7 +236,6 @@ const CampaignBuilder = () => {
                         </div>
                     )}
 
-                    {/* Classification Display */}
                     {showClassification && campaignData.classification && (
                         <div className="mt-6">
                             <Separator />
