@@ -1,273 +1,122 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useForm } from 'react-hook-form';
-import { zodResolver } from '@hookform/resolvers/zod';
-import { campaignDefinitionSchema } from "@schemas/campaignDefinitionSchema";
-import { Button } from '../components/ui/Button';
-import { Input } from '../components/ui/Input';
 import { Textarea } from '../components/ui/Textarea';
-import { Form, FormItem, FormLabel, FormControl, FormMessage, FormField } from '../components/ui/Form';
+import { Button } from '../components/ui/Button';
 import { useToast } from '../components/ui/use-toast';
-// --- CORRECT IMPORT FROM CAMPAIGN CONTEXT ---
-import { useCampaign } from '../contexts/CampaignContext';
-// ------------------------------------------
-import { Separator } from '../components/ui/Separator';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/Card';
-import { Skeleton } from '../components/ui/Skeleton';
+import { useCampaign } from '../contexts/CampaignContext';
 
-const CampaignBuilder = () => {
-    // --- CORRECT HOOK DESTRUCTURING ---
-    const { campaignData, updateCampaignData, resetCampaignData } = useCampaign();
-    // --------------------------------
-    const navigate = useNavigate();
-    const { toast } = useToast();
-    const [isAssistantThinking, setIsAssistantThinking] = useState(false);
-    const [assistantResponse, setAssistantResponse] = useState('');
-    const [showClassification, setShowClassification] = useState(false);
-    const responseContainerRef = useRef(null);
+export default function CampaignBuilder() {
+  const [input, setInput] = useState('');
+  const [history, setHistory] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+  const navigate = useNavigate();
+  const { toast } = useToast();
+  const { updateCampaignData, resetCampaignData } = useCampaign();
+  const chatBoxRef = useRef(null);
 
-    const form = useForm({
-        resolver: zodResolver(campaignDefinitionSchema),
-        defaultValues: {
-            purpose: '',
-            audience: '',
-            target: '',
-            intent: '',
-            location: '',
-        },
-    });
+  useEffect(() => {
+    resetCampaignData();
+  }, []);
 
-    const onSubmit = async (values) => {
-        setIsAssistantThinking(true);
-        setAssistantResponse('');
-        setShowClassification(false);
-        console.log('[CampaignBuilder] Form submitted:', values);
+  useEffect(() => {
+    if (chatBoxRef.current) {
+      chatBoxRef.current.scrollTop = chatBoxRef.current.scrollHeight;
+    }
+  }, [history]);
 
-        try {
-            const response = await fetch('/api/campaign-assistant', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify(values),
-            });
+  const sendMessage = async () => {
+    if (!input.trim()) return;
 
-            if (!response.ok) {
-                const errorData = await response.json();
-                console.error('[CampaignBuilder] AI Assistant API Error:', errorData);
-                toast({
-                    variant: 'destructive',
-                    title: 'AI Assistant Error',
-                    description: errorData.message || 'Failed to get response from AI assistant.',
-                });
-                setIsAssistantThinking(false);
-                return;
-            }
+    const newHistory = [...history, { role: 'user', content: input }];
+    setHistory(newHistory);
+    setInput('');
+    setLoading(true);
+    setError(null);
 
-            const data = await response.json();
-            console.log('[CampaignBuilder] AI Assistant Response:', data);
-            setAssistantResponse(data.response);
+    try {
+      const response = await fetch('/api/campaign-assistant', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ input, history: newHistory }),
+      });
 
-            // --- CORRECT USAGE OF UPDATE FUNCTION ---
-            updateCampaignData({ summary: data.summary });
-            // -----------------------------------
-            console.log('[CampaignBuilder] Campaign Context Updated (after AI):', campaignData);
+      const data = await response.json();
+      const { aiMessage, done, ...summary } = data;
 
-            // Trigger campaign classification
-            await classifyCampaign(data.summary);
+      setHistory((prev) => [...prev, { role: 'assistant', content: aiMessage }]);
 
-        } catch (error) {
-            console.error('[CampaignBuilder] Error calling AI assistant:', error);
-            toast({
-                variant: 'destructive',
-                title: 'AI Assistant Error',
-                description: 'Something went wrong while communicating with the AI assistant.',
-            });
-            setIsAssistantThinking(false);
-        } finally {
-            setIsAssistantThinking(false);
-        }
-    };
+      if (done) {
+        updateCampaignData({ summary });
+        navigate('/app/campaign/plan');
+      }
+    } catch (err) {
+      console.error('❌ Error in AI assistant:', err);
+      toast({
+        variant: 'destructive',
+        title: 'Assistant error',
+        description: 'Something went wrong while talking to the AI.',
+      });
+      setError('Failed to communicate with assistant.');
+    } finally {
+      setLoading(false);
+    }
+  };
 
-    const classifyCampaign = async (summary) => {
-        if (!summary) {
-            console.warn('[CampaignBuilder] No summary to classify.');
-            return;
-        }
-        try {
-            const response = await fetch('/api/classify-campaign-type', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify(summary), // Assuming summary is what the classification API expects
-            });
+  const handleKeyDown = (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      sendMessage();
+    }
+  };
 
-            if (!response.ok) {
-                const errorData = await response.json();
-                console.error('[CampaignBuilder] Classification API Error:', errorData);
-                toast({
-                    variant: 'destructive',
-                    title: 'Classification Error',
-                    description: errorData.message || 'Failed to classify campaign type.',
-                });
-                return;
-            }
+  return (
+    <div className="container py-8">
+      <Card className="max-w-3xl mx-auto">
+        <CardHeader>
+          <CardTitle>Describe Your Campaign</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-4">
+            <div
+              ref={chatBoxRef}
+              className="max-h-[300px] overflow-y-auto border rounded p-4 bg-gray-50 flex flex-col gap-2"
+            >
+              {history.length === 0 && (
+                <p className="text-muted-foreground">Start by describing what you’re working on…</p>
+              )}
+              {history.map((msg, idx) => (
+                <div
+                  key={idx}
+                  className={`px-4 py-2 rounded max-w-[80%] text-sm whitespace-pre-wrap ${
+                    msg.role === 'user'
+                      ? 'bg-blue-500 text-white self-end ml-auto'
+                      : 'bg-gray-200 text-gray-800 self-start mr-auto'
+                  }`}
+                >
+                  <strong>{msg.role === 'user' ? 'You' : 'Assistant'}:</strong> {msg.content}
+                </div>
+              ))}
+            </div>
 
-            const data = await response.json();
-            console.log('[CampaignBuilder] Classification Result:', data);
-            // --- CORRECT USAGE OF UPDATE FUNCTION ---
-            updateCampaignData({ classification: data });
-            // -----------------------------------
-            console.log('[CampaignBuilder] Campaign Context Updated (after classification):', campaignData);
-            setShowClassification(true);
+            <Textarea
+              placeholder="Type your message and hit Enter…"
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={handleKeyDown}
+              rows={3}
+              disabled={loading}
+            />
 
-        } catch (error) {
-            console.error('[CampaignBuilder] Error calling classification API:', error);
-            toast({
-                variant: 'destructive',
-                title: 'Classification Error',
-                description: 'Something went wrong during campaign classification.',
-            });
-        }
-    };
+            <Button onClick={sendMessage} disabled={loading || !input.trim()}>
+              {loading ? 'Thinking…' : 'Send'}
+            </Button>
 
-    const handleNext = () => {
-        navigate('/campaign/plan');
-    };
-
-    // --- CORRECTED useEffect HOOK TO PREVENT LOOP ---
-    useEffect(() => {
-        console.log('[CampaignBuilder] Component mounted.'); // Log on mount
-        if (campaignData.summary === null) {
-             console.log('[CampaignBuilder useEffect] Initial state has null summary, resetting campaign data.');
-             resetCampaignData();
-             console.log('[CampaignBuilder] Initial Campaign Context Reset.');
-         } else {
-             console.log('[CampaignBuilder useEffect] Component mounted with existing summary, not resetting.');
-        }
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []); // <-- Empty dependency array: runs only ONCE on mount
-
-    // --- Keep the useEffect for scrolling ---
-    useEffect(() => {
-        if (responseContainerRef.current) {
-            responseContainerRef.current.scrollTop = responseContainerRef.current.scrollHeight;
-        }
-    }, [assistantResponse]); // Dependency on assistantResponse
-
-
-    return (
-        <div className="container py-8">
-            <h2 className="text-2xl font-bold mb-4">Define Your Campaign</h2>
-            <Card className="w-full max-w-lg mx-auto">
-                <CardHeader>
-                    <CardTitle>Tell us about your campaign goals:</CardTitle>
-                </CardHeader>
-                <CardContent>
-                    <Form {...form}>
-                         {/* Correct native form nesting */}
-                        <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-                            {/* Form Fields */}
-                            <FormField
-                                control={form.control}
-                                name="purpose"
-                                render={({ field }) => (
-                                    <FormItem>
-                                        <FormLabel>What is the primary purpose of this campaign?</FormLabel>
-                                        <FormControl>
-                                            <Textarea placeholder="e.g., Increase membership, raise awareness about climate change, mobilize voters for an upcoming election" {...field} />
-                                        </FormControl>
-                                        <FormMessage />
-                                    </FormItem>
-                                )}
-                            />
-                            <FormField
-                                control={form.control}
-                                name="audience"
-                                render={({ field }) => (
-                                    <FormItem>
-                                        <FormLabel>Who is your target audience?</FormLabel>
-                                        <FormControl>
-                                            <Textarea placeholder="e.g., Union members, environmentally conscious individuals, young voters in urban areas" {...field} />
-                                        </FormControl>
-                                        <FormMessage />
-                                    </FormItem>
-                                )}
-                            />
-                            <FormField
-                                control={form.control}
-                                name="target"
-                                render={({ field }) => (
-                                    <FormItem>
-                                        <FormLabel>What specific action do you want your audience to take (the 'target' of the ad)?</FormLabel>
-                                        <FormControl>
-                                            <Input placeholder="e.g., Sign a petition, attend a rally, donate online, contact their representative" {...field} />
-                                        </FormControl>
-                                        <FormMessage />
-                                    </FormItem>
-                                )}
-                            />
-                            <FormField
-                                control={form.control}
-                                name="intent"
-                                render={({ field }) => (
-                                    <FormItem>
-                                        <FormLabel>What is the primary intent behind this campaign (inform, persuade, mobilize)?</FormLabel>
-                                        <FormControl>
-                                            <Input placeholder="e.g., To educate the public, to convince undecided voters, to engage in participation" {...field} />
-                                        </FormControl>
-                                        <FormMessage />
-                                    </FormItem>
-                                )}
-                            />
-                            <FormField
-                                control={form.control}
-                                name="location"
-                                render={({ field }) => (
-                                    <FormItem>
-                                        <FormLabel>What is the geographic scope of this campaign?</FormLabel>
-                                        <FormControl>
-                                            <Input placeholder="e.g., Local community, statewide, national" {...field} />
-                                        </FormControl>
-                                        <FormMessage />
-                                    </FormItem>
-                                )}
-                            />
-                            {/* Submit Button */}
-                            <Button type="submit" disabled={isAssistantThinking}>
-                                {isAssistantThinking ? 'Thinking...' : 'Get Campaign Insights'}
-                            </Button>
-                        </form> {/* <-- Closing native form tag */}
-                    </Form> {/* <-- Closing custom Form component tag */}
-
-                    {/* Assistant Response Display */}
-                    {assistantResponse && (
-                        <div ref={responseContainerRef} className="mt-6 p-4 border rounded-md bg-gray-50 overflow-y-auto max-h-96">
-                            <h3 className="text-lg font-semibold mb-2">AI Assistant Summary:</h3>
-                            <p className="whitespace-pre-wrap">{assistantResponse}</p>
-                        </div>
-                    )}
-
-                    {/* Classification Display */}
-                    {showClassification && campaignData.classification && (
-                        <div className="mt-6">
-                            <Separator />
-                            <div className="mt-4">
-                                <h3 className="text-lg font-semibold mb-2">Campaign Classification:</h3>
-                                <p><strong>Type:</strong> {campaignData.classification.type}</p>
-                                <p><strong>Subtype:</strong> {campaignData.classification.subtype}</p>
-                                <p><strong>Use Case:</strong> {campaignData.classification.use_case}</p>
-                                <Button onClick={handleNext} className="mt-4">
-                                    Next: Develop Campaign Plan
-                                </Button>
-                            </div>
-                        </div>
-                    )}
-                </CardContent>
-            </Card>
-        </div>
-    );
-};
-
-export default CampaignBuilder;
+            {error && <p className="text-red-500 text-sm">{error}</p>}
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}

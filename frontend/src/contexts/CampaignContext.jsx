@@ -6,42 +6,43 @@ const CampaignContext = createContext();
 export const useCampaign = () => useContext(CampaignContext);
 
 export const CampaignProvider = ({ children }) => {
-    const [campaignData, setCampaignData] = useState({
-        summary: null,
-        classification: null,
-        plan: null,
-        messagingGuide: null,
-        name: '',
+  const [campaignData, setCampaignData] = useState({
+    summary: null,           // structured OpenAI summary (purpose, audience, etc.)
+    classification: null,    // type/subtype/use case
+    plan: null,              // campaign plan steps
+    messagingGuide: null,    // generated messaging framework
+    name: '',                // campaign name
+  });
+
+  const updateCampaignData = (newData) => {
+    setCampaignData(prev => {
+      const updated = { ...prev, ...newData };
+      console.log('✅ Campaign Context Updated:', updated);
+      return updated;
     });
+  };
 
-    const updateCampaignData = (newData) => {
-        setCampaignData(prevData => ({ ...prevData, ...newData }));
-        console.log("Campaign Context Updated:", { ...campaignData, ...newData });
+  const resetCampaignData = () => {
+    const reset = {
+      summary: null,
+      classification: null,
+      plan: null,
+      messagingGuide: null,
+      name: '',
     };
+    setCampaignData(reset);
+    console.log('🔄 Campaign Context Reset');
+  };
 
-    const resetCampaignData = () => {
-         setCampaignData({
-            summary: null,
-            classification: null,
-            plan: null,
-            messagingGuide: null,
-            name: '',
-        });
-        console.log("Campaign Context Reset");
-    };
+  const value = {
+    campaignData,
+    updateCampaignData,
+    resetCampaignData,
+  };
 
-    const value = {
-        campaignData,
-        updateCampaignData, // <-- updateCampaignData is defined here
-        resetCampaignData, // <-- resetCampaignData is defined here
-    };
-
-    return (
-        <CampaignContext.Provider value={value}>
-            {children}
-        </CampaignContext.Provider>
-    );
+  return (
+    <CampaignContext.Provider value={value}>
+      {children}
+    </CampaignContext.Provider>
+  );
 };
-
-// The file only exports useCampaign and CampaignProvider
-// export { useCampaign, CampaignProvider }; // Implicitly exported due to `export const` above

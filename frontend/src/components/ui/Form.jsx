@@ -1,43 +1,19 @@
-import React, { createContext, useContext } from 'react';
-// *** IMPORT FormProvider from react-hook-form ***
-import { useFormContext, FormProvider } from 'react-hook-form'; // <-- Make sure FormProvider is imported
+import React from 'react';
+import { useFormContext, FormProvider } from 'react-hook-form';
 
 function cn(...classes) {
   return classes.filter(Boolean).join(' ');
 }
 
-// --- REMOVE OR COMMENT OUT THIS CUSTOM CONTEXT ---
-// This custom context is not not needed when using react-hook-form's FormProvider
-// const FormContext = createContext({});
-// -----------------------------------------------
-
-// --- CORRECTED Form COMPONENT ---
-// This component receives the form methods object from useForm (e.g., {...form} in CampaignBuilder)
-// It wraps its children in react-hook-form's FormProvider to make the methods available via context.
-// It also renders the native form and attaches the handleSubmit function.
-const Form = ({ children, ...methods }) => { // <-- Receive the form methods as props
-  // DO NOT call useFormContext() in this component.
-  // The methods are received via props.
+const Form = ({ children, onSubmit, className, ...methods }) => {
   return (
-    // *** USE FormProvider HERE ***
-    // Make the methods available to all descendant components via context
     <FormProvider {...methods}>
-      {/* Render the native HTML <form> tag */}
-      {/* Attach the handleSubmit function from react-hook-form to the native form's onSubmit */}
-      {/* Spread any other props onto the native form if needed */}
-      <form onSubmit={methods.handleSubmit} {...methods}>
-        {children} {/* Render the rest of your form content */}
+      <form onSubmit={onSubmit} className={className}>
+        {children}
       </form>
     </FormProvider>
   );
 };
-// -------------------------------
-
-// --- Standard UI Components (These likely don't need changes) ---
-// These components receive props and render basic HTML elements with classes.
-// They do NOT need to call useFormContext or use the custom FormContext unless they
-// have specific logic that requires direct access to form methods (which is uncommon
-// for basic presentational components like these).
 
 const FormItem = ({ className, ...props }) => (
   <div className={cn("space-y-2", className)} {...props} />
@@ -60,53 +36,26 @@ const FormControl = React.forwardRef(({ className, ...props }, ref) => (
 ));
 FormControl.displayName = "FormControl";
 
-const FormDescription = React.forwardRef(({ className, ...props }, ref) => (
-  <p
-    className={cn("text-sm text-muted-foreground", className)}
-    ref={ref}
-    {...props}
-  />
-));
-FormDescription.displayName = "FormDescription";
+const FormMessage = ({ children }) => (
+  <p className="text-xs text-red-600">{children}</p>
+);
 
-const FormMessage = React.forwardRef(({ className, ...props }, ref) => (
-  <p
-    className={cn("text-sm font-medium text-red-600", className)}
-    ref={ref}
-    {...props}
-  />
-));
-FormMessage.displayName = "FormMessage";
-
-// --- CORRECTED FormField COMPONENT ---
-// This component's primary role is to render its children.
-// It no longer needs the 'control' prop passed directly from CampaignBuilder,
-// as the render prop in CampaignBuilder receives the necessary 'field' object directly
-// from react-hook-form when used with FormProvider.
-const FormField = ({ ...props }) => { // <-- No need for 'control' prop here
-    // If this component needed form methods itself, you would call useFormContext() here.
-    // But for standard FormField usage with a render prop, you don't typically need it.
-    // const methods = useFormContext(); // Optional if needed
-
-    // *** REMOVE OR COMMENT OUT THE CUSTOM CONTEXT PROVIDER ***
-    // This was the source of the rendering issue
-    // return (
-    //   <FormContext.Provider value={{ control }}>
-    //     {props.children} // <--- This renders the render prop function
-    //   </FormContext.Provider>
-    // );
-    // ---------------------------------------------------
-
-    // *** JUST RENDER THE CHILDREN ***
-    // The children of FormField in CampaignBuilder is the render prop function:
-    // render={({ field }) => (...)}
-    // This render prop function will receive the correct 'field' object from react-hook-form
-    return props.children;
-    // ------------------------------
+const FormField = ({ name, control, render }) => {
+  const { register, formState: { errors } } = useFormContext();
+  return render({
+    field: {
+      ...register(name),
+      name,
+    },
+    error: errors[name],
+  });
 };
-// -----------------------------------
 
-export { Form, FormItem, FormLabel, FormControl, FormDescription, FormMessage, FormField };
-
-// You should also remove any example usage comments at the bottom of this file
-// that use the old incorrect context pattern.
+export {
+  Form,
+  FormItem,
+  FormLabel,
+  FormControl,
+  FormMessage,
+  FormField,
+};

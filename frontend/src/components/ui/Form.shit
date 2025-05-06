@@ -25,7 +25,7 @@ const Form = ({ children, ...methods }) => { // <-- Receive the form methods as 
       {/* Render the native HTML <form> tag */}
       {/* Attach the handleSubmit function from react-hook-form to the native form's onSubmit */}
       {/* Spread any other props onto the native form if needed */}
-      <form onSubmit={methods.handleSubmit} {...methods}>
+      <form {...methods}>
         {children} {/* Render the rest of your form content */}
       </form>
     </FormProvider>
