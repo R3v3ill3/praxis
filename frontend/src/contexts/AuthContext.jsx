@@ -1,52 +1,30 @@
-// frontend/src/context/AuthContext.js
-import React, { createContext, useState, useEffect, useContext } from 'react';
-import { onAuthStateChanged } from 'firebase/auth';
-import { auth } from '../firebase'; // Ensure this path is correct
+import React, { createContext, useContext, useEffect, useState } from 'react';
+import { onAuthStateChanged, signInWithEmailAndPassword, signOut } from 'firebase/auth';
+import { auth } from '../firebase';
 
 const AuthContext = createContext();
 
-export const useAuth = () => useContext(AuthContext);
+export function useAuth() {
+  return useContext(AuthContext);
+}
 
-export const AuthProvider = ({ children }) => {
-    const [currentUser, setCurrentUser] = useState(null);
-    const [loading, setLoading] = useState(true);
+export function AuthProvider({ children }) {
+  const [user, setUser] = useState(null);
+  const [loading, setLoading] = useState(true); // ⬅️ Track loading
 
-    useEffect(() => {
-        // Listen for authentication state changes
-        const unsubscribe = onAuthStateChanged(auth, (user) => {
-            setCurrentUser(user);
-            setLoading(false);
-            console.log('Auth State Changed:', user ? `User logged in (${user.uid})` : 'User logged out');
-        });
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
+      setUser(firebaseUser || null);
+      setLoading(false); // ⬅️ Done loading once auth state is resolved
+    });
 
-        // Cleanup subscription on unmount
-        return unsubscribe;
-    }, []);
+    return unsubscribe;
+  }, []);
 
-    const getIdToken = async () => {
-        if (!currentUser) {
-            console.warn("getIdToken: No current user.");
-            return null;
-        }
-        try {
-            const token = await currentUser.getIdToken(true); // Force refresh if needed
-            return token;
-        } catch (error) {
-            console.error("Error getting ID token:", error);
-            return null;
-        }
-    };
+  const login = (email, password) => signInWithEmailAndPassword(auth, email, password);
+  const logout = () => signOut(auth);
 
+  const value = { user, loading, login, logout };
 
-    const value = {
-        currentUser,
-        loading,
-        getIdToken // Expose function to get token
-    };
-
-    return (
-        <AuthContext.Provider value={value}>
-            {!loading && children}
-        </AuthContext.Provider>
-    );
-};
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
+}

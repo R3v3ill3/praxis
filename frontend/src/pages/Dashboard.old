@@ -1,0 +1,74 @@
+import React, { useEffect, useState } from 'react';
+import axios from 'axios';
+import { useAuth } from '../contexts/AuthContext';
+import { useNavigate } from 'react-router-dom';
+
+export default function Dashboard() {
+  const { user, logout } = useAuth();
+  const [campaigns, setCampaigns] = useState([]);
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    console.log('🧪 Dashboard mounted');
+
+    const fetchCampaigns = async () => {
+      if (!user) {
+        console.warn('⚠️ No user found, aborting fetch');
+        return;
+      }
+
+      try {
+        const token = await user.getIdToken();
+        console.log('✅ Authenticated UID:', user.uid);
+        console.log('⏳ Fetching campaigns…');
+
+        const response = await axios.get('/api/campaigns', {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
+
+        console.log('✅ Campaigns received:', response.data);
+        setCampaigns(response.data);
+      } catch (error) {
+        console.error('Dashboard: Error fetching campaigns:', error);
+      }
+    };
+
+    fetchCampaigns();
+  }, [user]);
+
+  const handleLogout = async () => {
+    await logout();
+    navigate('/');
+  };
+
+  return (
+    <div className="container mx-auto py-10">
+      <div className="flex justify-between items-center mb-6">
+        <h1 className="text-2xl font-bold">Dashboard</h1>
+        <button
+          onClick={handleLogout}
+          className="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded"
+        >
+          Logout
+        </button>
+      </div>
+      <div className="space-y-4">
+        {campaigns.length > 0 ? (
+          campaigns.map((campaign) => (
+            <div
+              key={campaign.id}
+              className="border rounded p-4 shadow hover:shadow-md transition"
+            >
+              <h2 className="text-lg font-semibold">{campaign.name}</h2>
+              <p>{campaign.summary?.goal}</p>
+            </div>
+          ))
+        ) : (
+          <p className="text-muted">No campaigns yet.</p>
+        )}
+      </div>
+    </div>
+  );
+}

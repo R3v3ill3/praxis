@@ -1,39 +1,38 @@
-// frontend/src/App.jsx
-import React from 'react';
-import { Routes, Route } from 'react-router-dom';
-import LandingPage from './pages/LandingPage';
-import Signup from './pages/Signup';
-import Login from './pages/Login';
-import OnboardingChat from './pages/OnboardingChat';
-import OnboardingSummary from './pages/OnboardingSummary';
-import Dashboard from './pages/Dashboard';
-import CampaignBuilder from './pages/CampaignBuilder';
-import CampaignPlan from './pages/CampaignPlan';
-import CampaignMessagingGuide from './pages/CampaignMessagingGuide';
-import CampaignReviewSave from './pages/CampaignReviewSave'; // Import the Review/Save page
-import ContentGenerator from './pages/ContentGenerator'; // Import the (placeholder) Content Gen page
+import { Suspense, lazy } from 'react';
+import { ErrorBoundary } from 'react-error-boundary';
 
-export default function App() {
+// Fallback component
+function ErrorFallback({ error }) {
   return (
-    <Routes>
-      {/* Public access */}
-      <Route path="/" element={<LandingPage />} />
-      <Route path="/signup" element={<Signup />} />
-      <Route path="/login" element={<Login />} />
-
-      {/* Onboarding */}
-      <Route path="/onboarding" element={<OnboardingChat />} />
-      <Route path="/onboarding/summary" element={<OnboardingSummary />} />
-
-      {/* Dashboard */}
-      <Route path="/dashboard" element={<Dashboard />} />
-
-      {/* Campaign creation flow */}
-      <Route path="/app/campaign/new" element={<CampaignBuilder />} />
-      <Route path="/app/campaign/plan" element={<CampaignPlan />} />
-      <Route path="/app/campaign/message" element={<CampaignMessagingGuide />} />
-      <Route path="/campaign/review" element={<CampaignReviewSave />} /> {/* ADDED review route */}
-      <Route path="/campaign/content" element={<ContentGenerator />} /> {/* ADDED content gen route */}    
-    </Routes>
+    <div role="alert">
+      <p className="text-red-500">⚠️ Something went wrong rendering this page:</p>
+      <pre className="text-xs">{error.message}</pre>
+    </div>
   );
 }
+
+// Lazy imports
+const Dashboard = lazy(() => import('./pages/Dashboard.jsx'));
+const OnboardingChat = lazy(() => import('./pages/OnboardingChat.jsx'));
+
+<Route
+  path="/dashboard"
+  element={
+    <ErrorBoundary FallbackComponent={ErrorFallback}>
+      <Suspense fallback={<div>Loading Dashboard…</div>}>
+        <Dashboard />
+      </Suspense>
+    </ErrorBoundary>
+  }
+/>
+
+<Route
+  path="/onboarding"
+  element={
+    <ErrorBoundary FallbackComponent={ErrorFallback}>
+      <Suspense fallback={<div>Loading Onboarding…</div>}>
+        <OnboardingChat />
+      </Suspense>
+    </ErrorBoundary>
+  }
+/>

@@ -1,0 +1,49 @@
+import React, { Suspense, lazy } from 'react';
+import { BrowserRouter as Router, Route, Routes } from 'react-router-dom';
+import { AuthProvider } from '../contexts/AuthContext';
+import { CampaignProvider } from '../contexts/CampaignContext';
+
+const LandingPage = lazy(() => import('./LandingPage.jsx'));
+const Signup = lazy(() => import('./Signup.jsx'));
+const Login = lazy(() => import('./Login.jsx'));
+const Dashboard = lazy(() => import('./Dashboard.jsx'));
+const CampaignBuilder = lazy(() => import('./CampaignBuilder.jsx'));
+const CampaignPlan = lazy(() => import('./CampaignPlan.jsx'));
+const CampaignMessagingGuide = lazy(() => import('./CampaignMessagingGuide.jsx'));
+const MessagingAssistant = lazy(() => import('./MessagingAssistant.jsx'));
+const ContentGenerator = lazy(() => import('./ContentGenerator.jsx'));
+
+function ErrorBoundary({ children }) {
+  try {
+    return children;
+  } catch (err) {
+    console.error('Error in component rendering:', err);
+    return <div>Error loading component</div>;
+  }
+}
+
+function App() {
+  return (
+    <AuthProvider>
+      <CampaignProvider>
+        <Router>
+          <Suspense fallback={<div>Loading...</div>}>
+            <Routes>
+              <Route path="/" element={<LandingPage />} />
+              <Route path="/signup" element={<Signup />} />
+              <Route path="/login" element={<Login />} />
+              <Route path="/dashboard" element={<ErrorBoundary><Dashboard /></ErrorBoundary>} />
+              <Route path="/app/campaign/new" element={<CampaignBuilder />} />
+              <Route path="/app/campaign/plan" element={<CampaignPlan />} />
+              <Route path="/app/campaign/messaging-guide" element={<CampaignMessagingGuide />} />
+              <Route path="/app/campaign/messaging-chat" element={<MessagingAssistant />} />
+              <Route path="/app/campaign/generate-content" element={<ContentGenerator />} />
+            </Routes>
+          </Suspense>
+        </Router>
+      </CampaignProvider>
+    </AuthProvider>
+  );
+}
+
+export default App;

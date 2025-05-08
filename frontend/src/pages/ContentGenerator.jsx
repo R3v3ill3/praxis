@@ -1,23 +1,79 @@
-import React from 'react';
-import { useCampaign } from '../contexts/CampaignContext'; // Or load specific campaign
-import { Link } from 'react-router-dom';
+// frontend/src/pages/ContentGenerator.jsx
+
+import React, { useState } from 'react';
+import { useCampaign } from '../contexts/CampaignContext';
+import { Textarea } from '../components/ui/Textarea';
+import { Button } from '../components/ui/Button';
+import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/Card';
+import { useToast } from '../components/ui/use-toast';
 
 export default function ContentGenerator() {
-    // In a real scenario, you might load a specific campaign ID
-    // or pass selected plan actions here.
-    const { campaignData } = useCampaign();
+  const { campaignData } = useCampaign();
+  const { messagingGuide, summary } = campaignData || {};
+  const { toast } = useToast();
 
-    return (
-        <div className="p-6">
-            <h1 className="text-3xl font-bold mb-4">Generate Campaign Content</h1>
-             <p className="mb-4">Select an action from your plan and generate content.</p>
-            {/* TODO: Add UI to select actions from campaignData.plan */}
-            {/* TODO: Add UI to trigger API call to backend content generator */}
-             <pre className="bg-gray-100 p-2 rounded text-xs mb-4">
-                Plan Data (for reference): {JSON.stringify(campaignData.plan, null, 2)}
-             </pre>
-             <p className="text-gray-500 italic">Content generation UI and API integration needed here.</p>
-             <Link to="/dashboard" className="text-blue-600 underline mt-4 block">Back to Dashboard</Link>
-        </div>
-    );
+  const [format, setFormat] = useState('SMS');
+  const [output, setOutput] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const formats = ['SMS', 'Social Media Post', 'Email Intro', 'Poster Slogan', 'Speech Excerpt'];
+
+  const generateContent = async () => {
+    setLoading(true);
+    setOutput('');
+    try {
+      const res = await fetch('/api/generate-content', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ format, messagingGuide, summary })
+      });
+      const data = await res.json();
+      if (data.content) {
+        setOutput(data.content);
+      } else {
+        toast({ variant: 'destructive', title: 'No content returned' });
+      }
+    } catch (err) {
+      toast({
+        variant: 'destructive',
+        title: 'Error generating content',
+        description: err.message
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="container py-8">
+      <Card className="max-w-4xl mx-auto">
+        <CardHeader>
+          <CardTitle>Generate Campaign Content</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <label className="block text-sm font-medium text-gray-700">Select Content Format:</label>
+          <select
+            value={format}
+            onChange={(e) => setFormat(e.target.value)}
+            className="w-full p-2 border rounded"
+          >
+            {formats.map((f) => (
+              <option key={f} value={f}>{f}</option>
+            ))}
+          </select>
+
+          <Button onClick={generateContent} disabled={loading}>
+            {loading ? 'Generating…' : 'Generate Content'}
+          </Button>
+
+          {output && (
+            <div className="mt-6 whitespace-pre-wrap border rounded p-4 bg-gray-50">
+              <h3 className="text-lg font-semibold mb-2">Generated Content:</h3>
+              <div>{output}</div>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  );
 }

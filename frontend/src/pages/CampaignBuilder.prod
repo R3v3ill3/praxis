@@ -26,27 +26,6 @@ export default function CampaignBuilder() {
     }
   }, [history]);
 
-  const classifyCampaign = async (summary) => {
-    try {
-      const response = await fetch('/api/classify-campaign-type', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ summary }),
-      });
-
-      const data = await response.json();
-
-      if (response.ok && data.match) {
-        updateCampaignData({ classification: data.match });
-        console.log('✅ Classification stored in context:', data.match);
-      } else {
-        console.warn('⚠️ No classification match returned.');
-      }
-    } catch (error) {
-      console.error('❌ Error during campaign classification:', error);
-    }
-  };
-
   const sendMessage = async () => {
     if (!input.trim()) return;
 
@@ -70,7 +49,6 @@ export default function CampaignBuilder() {
 
       if (done) {
         updateCampaignData({ summary });
-        await classifyCampaign(summary);
         navigate('/app/campaign/plan');
       }
     } catch (err) {

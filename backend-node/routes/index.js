@@ -7,7 +7,7 @@ import campaignAssistant from './campaign-assistant.js';
 import classifyCampaign from './classify-campaign-type.js';
 import campaignPlanRouter from './campaign-plan.js';
 import messagingGuideRouter from './messaging-guide.js';
-import contentGeneratorRouter from './content-generator.js'; // Import new router
+import contentGeneratorRouter from './generate-content.js';
 
 const router = express.Router();
 
