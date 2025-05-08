@@ -1,5 +1,6 @@
-
-import React, { createContext, useContext, useState } from 'react';
+// frontend/src/contexts/CampaignContext.jsx
+import React, { createContext, useState, useContext } from 'react';
+import { getFirestore, collection, getDocs, query, where } from 'firebase/firestore';
 import { getAuth } from 'firebase/auth';
 
 const CampaignContext = createContext();
@@ -17,40 +18,25 @@ export const CampaignProvider = ({ children }) => {
   });
 
   const fetchCampaigns = async () => {
-    const auth = getAuth();
-    const user = auth.currentUser;
-
-    // DEV fallback
-    if (!user) {
-      console.warn('⚠️ No user logged in, loading mock campaigns.');
-      const dummy = [
-        {
-          id: 'mock001',
-          name: 'Mock Campaign',
-          summary: { purpose: 'Test', audience: 'Developers', goals: ['issue awareness'] },
-          classification: { primary_type: 'Union', sub_type: 'Workplace' },
-        }
-      ];
-      setCampaigns(dummy);
-      return dummy;
-    }
-
     try {
-      const token = await user.getIdToken();
-      const res = await fetch('/api/campaigns', {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      const auth = getAuth();
+      const user = auth.currentUser;
+      if (!user) throw new Error('User not authenticated');
 
-      if (!res.ok) {
-        throw new Error(`Server responded with ${res.status}`);
-      }
+      const db = getFirestore();
+      const campaignsRef = collection(db, 'campaigns');
+      const q = query(campaignsRef, where('ownerId', '==', user.uid));
+      const snapshot = await getDocs(q);
 
-      const data = await res.json();
-      setCampaigns(data);
-      console.log('✅ Campaigns loaded:', data);
-      return data;
+      const fetched = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data(),
+      }));
+
+      setCampaigns(fetched);
+      console.log('📦 Campaigns fetched:', fetched);
     } catch (error) {
-      console.error('❌ Error loading campaigns:', error);
+      console.error('❌ Error in fetchCampaigns:', error);
       throw error;
     }
   };
