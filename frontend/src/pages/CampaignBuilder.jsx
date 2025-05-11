@@ -71,7 +71,7 @@ export default function CampaignBuilder() {
       if (done) {
         updateCampaignData({ summary });
         await classifyCampaign(summary);
-        navigate('/app/campaign/plan');
+        navigate('/app/campaign/message');
       }
     } catch (err) {
       console.error('❌ Error in AI assistant:', err);

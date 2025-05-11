@@ -17,6 +17,8 @@ function ErrorFallback({ error }) {
 const Dashboard = lazy(() => import('./pages/Dashboard.jsx'));
 const OnboardingChat = lazy(() => import('./pages/OnboardingChat.jsx'));
 const CampaignBuilder = lazy(() => import('./pages/CampaignBuilder.jsx'));
+const MessagingAssistant = lazy(() => import('./pages/MessagingAssistant.jsx'));
+const MessagingForm = lazy(() => import('./pages/MessagingForm.jsx'));
 // Add other pages below as needed
 // const CampaignSummary = lazy(() => import('./pages/CampaignSummary.jsx'));
 
@@ -28,6 +30,8 @@ export default function App() {
           <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/onboarding" element={<OnboardingChat />} />
           <Route path="/campaign-builder" element={<CampaignBuilder />} />
+          <Route path="/app/campaign/message" element={<MessagingAssistant />} />
+          <Route path="/app/campaign/message-form" element={<MessagingForm />} />
           {/* Add additional routes here */}
           {/* <Route path="/campaign-summary" element={<CampaignSummary />} /> */}
         </Routes>

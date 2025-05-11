@@ -3,7 +3,7 @@ import React, { useEffect, useState } from 'react';
 import { useCampaign } from '../contexts/CampaignContext';
 import { useNavigate } from 'react-router-dom';
 
-export default function MessagingAssistant() {
+export default function MessagingForm() {
   const { campaignData, updateCampaignData } = useCampaign();
   const navigate = useNavigate();
 
@@ -63,7 +63,7 @@ export default function MessagingAssistant() {
       updateCampaignData({ messagingGuide: data.messagingGuide });
       setGuideOutput(data.messagingGuide);
     } catch (err) {
-      console.error('❌ Messaging Assistant Error:', err);
+      console.error('❌ Messaging Form Error:', err);
       setError(err.message);
     } finally {
       setLoading(false);
@@ -72,8 +72,8 @@ export default function MessagingAssistant() {
 
   return (
     <div className="max-w-3xl mx-auto p-6">
-      <h2 className="text-xl font-bold mb-4">Messaging Assistant</h2>
-      <p className="text-sm mb-2 text-gray-600">Fill in any missing info to generate a strategic messaging guide.</p>
+      <h2 className="text-xl font-bold mb-4">Manual Messaging Form (for testing)</h2>
+      <p className="text-sm mb-2 text-gray-600">Fill in the data directly to generate a messaging guide.</p>
 
       {[
         { label: 'Issue Name', field: 'issueName' },
