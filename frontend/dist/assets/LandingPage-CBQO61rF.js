@@ -1,2 +1,0 @@
-import{j as e,L as s}from"./index-D6efte17.js";function n(){return e.jsxs("div",{className:"flex flex-col items-center justify-center h-screen bg-gray-50",children:[e.jsx("h1",{className:"text-4xl font-bold mb-6",children:"Welcome to Digital Co-op"}),e.jsxs("div",{className:"space-x-4",children:[e.jsx(s,{to:"/signup",className:"px-4 py-2 bg-green-600 text-white rounded",children:"Sign Up"}),e.jsx(s,{to:"/login",className:"px-4 py-2 bg-blue-600 text-white rounded",children:"Log In"})]})]})}export{n as default};
-//# sourceMappingURL=LandingPage-CBQO61rF.js.map

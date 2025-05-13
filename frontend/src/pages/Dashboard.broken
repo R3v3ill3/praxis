@@ -1,49 +1,71 @@
-import React, { Suspense, lazy } from 'react';
-import { BrowserRouter as Router, Route, Routes } from 'react-router-dom';
-import { AuthProvider } from '../contexts/AuthContext';
-import { CampaignProvider } from '../contexts/CampaignContext';
+import React, { useEffect, useState } from 'react';
+import { useAuth } from '../contexts/AuthContext';
+import { useCampaign } from '../contexts/CampaignContext';
+import { Card, CardHeader, CardTitle, CardContent } from '../components/ui/Card';
+import { Separator } from '../components/ui/Separator';
 
-const LandingPage = lazy(() => import('./LandingPage.jsx'));
-const Signup = lazy(() => import('./Signup.jsx'));
-const Login = lazy(() => import('./Login.jsx'));
-const Dashboard = lazy(() => import('./Dashboard.jsx'));
-const CampaignBuilder = lazy(() => import('./CampaignBuilder.jsx'));
-const CampaignPlan = lazy(() => import('./CampaignPlan.jsx'));
-const CampaignMessagingGuide = lazy(() => import('./CampaignMessagingGuide.jsx'));
-const MessagingAssistant = lazy(() => import('./MessagingAssistant.jsx'));
-const ContentGenerator = lazy(() => import('./ContentGenerator.jsx'));
+export default function Dashboard() {
+  const { user } = useAuth();
+  const { campaigns, fetchCampaigns } = useCampaign();
+  const [error, setError] = useState(null);
 
-function ErrorBoundary({ children }) {
-  try {
-    return children;
-  } catch (err) {
-    console.error('Error in component rendering:', err);
-    return <div>Error loading component</div>;
-  }
-}
+  console.log('[Dashboard.jsx] Render start');
+  console.log('[Dashboard.jsx] user:', user);
+  console.log('[Dashboard.jsx] campaigns:', campaigns);
+  console.log('[Dashboard.jsx] error:', error);
 
-function App() {
+  useEffect(() => {
+    console.log('📌 Auth State (Dashboard):', user);
+    if (user) {
+      fetchCampaigns()
+        .catch((err) => {
+          console.error('❌ Dashboard: Error fetching campaigns:', err);
+          setError('Failed to load campaigns.');
+        });
+    }
+  }, [user]);
+
   return (
-    <AuthProvider>
-      <CampaignProvider>
-        <Router>
-          <Suspense fallback={<div>Loading...</div>}>
-            <Routes>
-              <Route path="/" element={<LandingPage />} />
-              <Route path="/signup" element={<Signup />} />
-              <Route path="/login" element={<Login />} />
-              <Route path="/dashboard" element={<ErrorBoundary><Dashboard /></ErrorBoundary>} />
-              <Route path="/app/campaign/new" element={<CampaignBuilder />} />
-              <Route path="/app/campaign/plan" element={<CampaignPlan />} />
-              <Route path="/app/campaign/messaging-guide" element={<CampaignMessagingGuide />} />
-              <Route path="/app/campaign/messaging-chat" element={<MessagingAssistant />} />
-              <Route path="/app/campaign/generate-content" element={<ContentGenerator />} />
-            </Routes>
-          </Suspense>
-        </Router>
-      </CampaignProvider>
-    </AuthProvider>
+    <div className="container py-10">
+      <Card className="max-w-4xl mx-auto">
+        <CardHeader>
+          <CardTitle>Welcome to Your Dashboard</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <Separator className="my-4" />
+
+          {!user ? (
+            <p className="text-red-600">Not authenticated. Please log in.</p>
+          ) : error ? (
+            <p className="text-red-600">{error}</p>
+          ) : (
+            <>
+              <p className="mb-4">Hello, {user.email}!</p>
+              {campaigns && campaigns.length > 0 ? (
+                <ul className="list-disc pl-6 space-y-2">
+                  {campaigns.map((campaign) => (
+                    <li key={campaign.id} className="text-gray-800">
+                      <strong>{campaign.name}</strong> – {campaign.summary}
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p>No campaigns found yet.</p>
+              )}
+            </>
+          )}
+        
+              <div className="mt-6">
+                <a
+                  href="/campaign-builder"
+                  className="inline-block bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700"
+                >
+                  Start a New Campaign
+                </a>
+              </div>
+    
+    </CardContent>
+      </Card>
+    </div>
   );
 }
-
-export default App;

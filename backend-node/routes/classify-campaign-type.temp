@@ -49,11 +49,9 @@ async function loadData() {
             }
         });
         if (!allSucceeded) {
-            // Check specifically for goal_mappings.json as it's critical
-            const goalMappingsFileConfig = filesToLoad.find(item => item.key === 'goalMappings');
-            const goalMappingsData = campaignData.goalMappings;
-            if (goalMappingsFileConfig && (!goalMappingsData || (Array.isArray(goalMappingsData) && goalMappingsData.length === 0))) {
-                 console.error(`[classify-campaign] CRITICAL: ${goalMappingsFileConfig.file} failed to load or is empty. Classification depends heavily on this file.`);
+            // If goal_mappings.json is missing, it's a critical error for classification logic
+            if (filesToLoad.find(item => item.key === 'goalMappings' && !campaignData.goalMappings.length)) {
+                console.error(`[classify-campaign] CRITICAL: goal_mappings.json failed to load or is empty. Classification cannot proceed effectively.`);
             }
             throw campaignData.loadError || new Error("One or more data files failed to load.");
         }
@@ -61,55 +59,42 @@ async function loadData() {
         // --- Populate maps ---
         campaignData.types.forEach(t => campaignData.typesMap.set(t.id, t));
         campaignData.subtypes.forEach(st => {
-            let currentId = st.id.toLowerCase().trim(); // Normalize ID
-            let currentTypeId = st.type_id.toLowerCase().trim();
-            if (currentId === 'envrionmental_political') { 
-                console.warn(`[classify-campaign] Correcting subtype ID from 'envrionmental_political' to 'environmental_political'`);
-                currentId = 'environmental_political'; 
-            }
-            if (currentTypeId === 'environmental ') { // Example of correcting potential space
-                currentTypeId = 'environmental';
-            }
-            campaignData.subtypesMap.set(currentId, {...st, id: currentId, type_id: currentTypeId});
+            // Typos correction from provided JSON - adjust if these are intentional variations
+            if (st.id === 'envrionmental_political') { st.id = 'environmental_political'; st.type_id = 'environmental'; }
+            campaignData.subtypesMap.set(st.id, st);
         });
         campaignData.useCases.forEach(uc => campaignData.useCasesMap.set(uc.id, uc));
 
         campaignData.goals.forEach(g => {
-            let canonId = g.id.toLowerCase().trim();
-            if (canonId === 'poltical_decision') {
-                console.warn(`[classify-campaign] Correcting goal ID from 'poltical_decision' to 'political_decision'`);
-                canonId = 'political_decision';
-            }
+            let canonId = g.id.toLowerCase().trim(); // Normalize ID
+            // Typo correction from provided JSON - adjust if these are intentional variations
+            if (canonId === 'poltical_decision') { canonId = 'political_decision'; }
+
             const canonNameLower = g.name.toLowerCase().trim();
-            campaignData.goalsMap.set(canonNameLower, canonId);
-            campaignData.goalsMap.set(canonId, canonId);
-            campaignData.canonicalGoalNames.set(canonId, canonNameLower);
+            campaignData.goalsMap.set(canonNameLower, canonId); // Map name to canonical ID
+            campaignData.goalsMap.set(canonId, canonId);      // Map ID to canonical ID (self-map)
+            campaignData.canonicalGoalNames.set(canonId, canonNameLower); // Store canonical ID -> lowercased name
         });
-        // +++ LOG FOR CANONICAL GOAL NAMES +++
+        // +++ ADDED LOG +++
         console.log('[classify-campaign] DEBUG: Loaded Canonical Goal Names Map:', Array.from(campaignData.canonicalGoalNames.entries()));
 
-        if (Array.isArray(campaignData.goalMappings)) {
-            campaignData.goalMappings.forEach(gm => {
-                const priorities = new Map();
-                if(Array.isArray(gm.goals)) {
-                    gm.goals.forEach(g => {
-                        const inputGoalIdLower = g.goal_id.toLowerCase().trim();
-                        const canonicalGoalId = campaignData.goalsMap.get(inputGoalIdLower);
-                        if (canonicalGoalId) {
-                             priorities.set(canonicalGoalId, g.priority);
-                        } else {
-                             console.warn(`[classify-campaign] WARN: Goal ID "${g.goal_id}" in goal_mappings for use case "${gm.use_case_id}" could not be mapped to a canonical ID (Not found in campaign_goals.json or goalsMap).`);
-                        }
-                    });
-                } else {
-                     console.warn(`[classify-campaign] WARN: goals array missing or invalid for use_case_id "${gm.use_case_id}" in goal_mappings.json`);
-                }
-                campaignData.goalMappingsMap.set(gm.use_case_id, priorities);
-            });
-        } else {
-            console.error('[classify-campaign] CRITICAL: goal_mappings data is not an array or is missing. Classification will likely fail.');
-            campaignData.goalMappings = [];
-        }
+        campaignData.goalMappings.forEach(gm => {
+            const priorities = new Map();
+            if(Array.isArray(gm.goals)) {
+                gm.goals.forEach(g => {
+                    const inputGoalIdLower = g.goal_id.toLowerCase().trim();
+                    const canonicalGoalId = campaignData.goalsMap.get(inputGoalIdLower); // Look up canonical ID
+                    if (canonicalGoalId) {
+                         priorities.set(canonicalGoalId, g.priority);
+                    } else {
+                         console.warn(`[classify-campaign] WARN: Goal ID "${g.goal_id}" in goal_mappings for use case "${gm.use_case_id}" could not be mapped to a canonical ID.`);
+                    }
+                });
+            } else {
+                 console.warn(`[classify-campaign] WARN: goals array missing or invalid for use_case_id "${gm.use_case_id}" in goal_mappings.json`);
+            }
+            campaignData.goalMappingsMap.set(gm.use_case_id, priorities);
+        });
         // --- End populating maps ---
 
         campaignData.isLoaded = true;
@@ -120,14 +105,14 @@ async function loadData() {
          console.error(`[classify-campaign] ERROR: Critical failure during data loading or processing:`, err);
     }
 }
-loadData(); // Call loadData immediately when module loads
+loadData();
 // --- End Load JSON Data ---
 
 
 // --- Classification Logic ---
-// (This is the classification logic from the file you uploaded, with minor adjustments for unranked goals)
 function classifyCampaign(summary) {
-    const userRankedGoalIds = [];
+    // 1. Normalize User Goals
+    const userRankedGoalIds = []; // Though goals are unranked from AI, we process them with an index as "rank"
     if (Array.isArray(summary.goals)) {
         summary.goals.forEach((goalDescription, index) => {
             const goalDescLower = String(goalDescription).toLowerCase().trim();
@@ -145,8 +130,9 @@ function classifyCampaign(summary) {
             }
 
             if (bestMatchId) {
-                userRankedGoalIds.push({ id: bestMatchId, rank: index + 1 }); // rank is just index for now
+                userRankedGoalIds.push({ id: bestMatchId, rank: index + 1 }); // Use index as rank
             } else {
+                // Fallback: Check if description contains parts of the ID
                 for (const [canonId] of campaignData.canonicalGoalNames.entries()) {
                      const idParts = canonId.split('_');
                      if (idParts.some(part => part.length > 3 && goalDescLower.includes(part))) {
@@ -169,18 +155,25 @@ function classifyCampaign(summary) {
         return null;
     }
 
+    // 2. Score Use Cases
     let bestUseCaseId = null;
     let highestScore = -1;
 
     campaignData.goalMappingsMap.forEach((useCaseGoalPriorities, useCaseId) => {
         let currentScore = 0;
         let matchedGoalCount = 0;
-        userRankedGoalIds.forEach(userGoal => {
+
+        userRankedGoalIds.forEach(userGoal => { // userGoal.rank is just its original index for now
             if (useCaseGoalPriorities.has(userGoal.id)) {
                 matchedGoalCount++;
                 const predefinedPriority = useCaseGoalPriorities.get(userGoal.id);
-                // Simplified scoring for unranked goals: lower priority number = higher score component
-                let goalScore = (10 - predefinedPriority); // Assuming priorities are 1-9. Adjust 10 if priorities differ.
+                // Since input goals are unranked, we treat all matched goals with equal weight for now in scoring
+                // or simply count them, or use a default weight.
+                // The original scoring logic used rank heavily.
+                // For unranked goals, a simpler approach might be to sum priorities or count matches.
+                // Let's use a simplified score: 1 point per matched goal, potentially weighted by predefinedPriority.
+                // Lower predefinedPriority number means more important.
+                let goalScore = predefinedPriority > 0 ? (10 - predefinedPriority) : 1; // Simple score
                 currentScore += goalScore;
             }
         });
@@ -189,16 +182,18 @@ function classifyCampaign(summary) {
             highestScore = currentScore;
             bestUseCaseId = useCaseId;
         } else if (matchedGoalCount > 0 && currentScore === highestScore) {
-            console.log(`[classify-campaign] INFO: Tie in score for Use Case ID: ${useCaseId} (Score: ${currentScore.toFixed(2)}) with ${bestUseCaseId}`);
+            // Handle ties? For now, first one wins or could collect all ties.
+            console.log(`[classify-campaign] INFO: Tie in score for Use Case ID: ${useCaseId} (Score: ${currentScore.toFixed(2)})`);
         }
     });
 
     if (!bestUseCaseId) {
-        console.log(`[classify-campaign] INFO: No matching use case found based on goal priorities and unranked input.`);
+        console.log(`[classify-campaign] INFO: No matching use case found based on goal priorities.`);
         return null;
     }
-    console.log(`[classify-campaign] INFO: Best matching Use Case ID determined by goals: ${bestUseCaseId} (Score: ${highestScore.toFixed(2)})`);
+    console.log(`[classify-campaign] INFO: Best matching Use Case ID: ${bestUseCaseId} (Score: ${highestScore.toFixed(2)})`);
 
+    // 3. Trace Hierarchy
     const bestUseCase = campaignData.useCasesMap.get(bestUseCaseId);
     if (!bestUseCase) { console.error(`[classify-campaign] ERROR: Data inconsistency - Use Case ${bestUseCaseId} not found.`); return null; }
     
@@ -214,14 +209,15 @@ function classifyCampaign(summary) {
     
     console.log(`[classify-campaign] INFO: Classification Path: Type=${bestType.name}(${bestType.id}), Subtype=${bestSubtype.name}(${bestSubtype.id}), UseCase=${bestUseCase.name}(${bestUseCase.id})`);
 
+    // 4. Construct Result
     return {
         id: bestUseCaseId,
         primary_type: bestType.name,
         secondary_type: bestSubtype.name,
-        sub_type: bestUseCase.name,
+        sub_type: bestUseCase.name, // This is the use case name
         type_id: bestType.id,
-        subtype_id: bestSubtype.id,
-        confidence: highestScore
+        subtype_id: bestSubtype.id, // This is the full subtype ID like 'union_industrial'
+        confidence: highestScore // Or some other metric
     };
 }
 // --- End Classification Logic ---
@@ -233,20 +229,21 @@ router.post('/', (req, res) => {
     console.log(`[${requestTimestamp}] INFO: Received POST /api/classify-campaign-type`);
 
     if (!campaignData.isLoaded) {
-        console.error(`[${requestTimestamp}] ERROR: Classification unavailable - data not loaded. Load Error: ${JSON.stringify(campaignData.loadError, Object.getOwnPropertyNames(campaignData.loadError || {}))}`);
+        console.error(`[${requestTimestamp}] ERROR: Classification unavailable - data not loaded. Load Error: ${JSON.stringify(campaignData.loadError, Object.getOwnPropertyNames(campaignData.loadError))}`);
         return res.status(503).json({ error: 'Classification service temporarily unavailable (data loading error).' });
     }
 
     const { summary } = req.body;
 
-    // +++ LOG FOR RECEIVED SUMMARY +++
+    // +++ ADDED LOG +++
     console.log(`[${requestTimestamp}] [classify-campaign] DEBUG: Received summary for classification:`, JSON.stringify(summary, null, 2));
 
     if (!summary || typeof summary !== 'object' || !summary.purpose || !summary.audience || !summary.target || !Array.isArray(summary.goals)) {
-      console.warn(`[${requestTimestamp}] WARN: Received invalid or incomplete summary object. Must include purpose, audience, target, goals array. Keys of object being validated:`, Object.keys(summary || {}));
+      console.warn(`[${requestTimestamp}] WARN: Received invalid or incomplete summary object. Keys:`, Object.keys(summary));
       return res.status(400).json({ error: 'Missing expected fields (purpose, audience, target, goals array) in summary object.' });
     }
-     console.log(`[${requestTimestamp}] DEBUG: Received summary goals (unranked from AI):`, summary.goals);
+    // Note: summary.goals will be unranked array of strings from campaign-assistant
+    // The classifyCampaign function's userRankedGoalIds will use index as 'rank'
 
     const result = classifyCampaign(summary);
 
@@ -254,7 +251,7 @@ router.post('/', (req, res) => {
       console.log(`[${requestTimestamp}] INFO: Classification result: No match found.`);
       return res.status(200).json({
         match: null,
-        confidence: 0.0,
+        confidence: 0.0, // Ensure confidence is a number
         message: 'Could not classify campaign type based on provided summary goals.'
       });
     } else {
