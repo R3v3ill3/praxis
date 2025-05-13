@@ -1,11 +1,78 @@
-// frontend/src/pages/OnboardingSummary.jsx
+// OnboardingSummary.jsx (enhanced with per-question editing)
 import React from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
+import { db } from '../firebase';
+import { doc, setDoc } from 'firebase/firestore';
+import { getAuth } from 'firebase/auth';
 
-export default function OnboardingSummary({ summary }) {
+export default function OnboardingSummary() {
+  const { state } = useLocation();
+  const navigate = useNavigate();
+  const auth = getAuth();
+  const answers = state?.answers ?? {};
+
+  const stepKeys = [
+    'org_type',
+    'scale',
+    'membership_size',
+    'campaign_budget',
+    'staff_count',
+    'volunteer_count',
+    'tech_stack',
+  ];
+
+  const handleConfirm = async () => {
+    const user = auth.currentUser;
+    if (user) {
+      await setDoc(doc(db, 'organisations', user.uid), answers);
+      navigate('/dashboard');
+    }
+  };
+
+  const handleEdit = (key) => {
+    const targetStep = stepKeys.indexOf(key);
+    if (targetStep >= 0) {
+      navigate('/onboarding', {
+        state: { answers, stepIndex: targetStep }
+      });
+    }
+  };
+
   return (
-    <div className="p-4">
-      <h2 className="text-xl font-bold mb-2">Onboarding Summary</h2>
-      <p>{summary}</p>
+    <div className="p-4 max-w-xl mx-auto">
+      <h2 className="text-xl font-bold mb-4">Review Your Answers</h2>
+      <ul className="space-y-4">
+        {Object.entries(answers).map(([key, value]) => (
+          <li key={key} className="border p-3 rounded shadow-sm bg-white">
+            <div className="flex justify-between items-start">
+              <div>
+                <strong>{key.replace(/_/g, ' ')}:</strong><br />
+                {Array.isArray(value) ? value.join(', ') : value}
+              </div>
+              <button
+                onClick={() => handleEdit(key)}
+                className="ml-4 px-2 py-1 text-sm bg-yellow-400 text-black rounded"
+              >
+                Edit
+              </button>
+            </div>
+          </li>
+        ))}
+      </ul>
+      <div className="mt-6 flex space-x-4">
+        <button
+          onClick={() => navigate('/onboarding', { state: { answers } })}
+          className="px-4 py-2 bg-gray-300 text-black rounded"
+        >
+          Edit All
+        </button>
+        <button
+          onClick={handleConfirm}
+          className="px-4 py-2 bg-green-600 text-white rounded"
+        >
+          Confirm & Continue
+        </button>
+      </div>
     </div>
   );
 }

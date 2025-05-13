@@ -1,0 +1,142 @@
+import React, { useEffect, useState } from 'react';
+import { useAuth } from '../contexts/AuthContext';
+import { doc, updateDoc } from 'firebase/firestore';
+import { useNavigate } from 'react-router-dom';
+import { db } from '../firebase';
+
+export default function EditCampaignClassification() {
+  const { user } = useAuth();
+  const navigate = useNavigate();
+  const [campaignId, setCampaignId] = useState(null);
+  const [classification, setClassification] = useState(null);
+  const [types, setTypes] = useState([]);
+  const [subtypes, setSubtypes] = useState([]);
+  const [useCases, setUseCases] = useState([]);
+  const [primaryTypeId, setPrimaryTypeId] = useState('');
+  const [secondaryTypeId, setSecondaryTypeId] = useState('');
+  const [useCaseId, setUseCaseId] = useState('');
+  const [saveSuccess, setSaveSuccess] = useState(false);
+
+  useEffect(() => {
+    fetch('/api/classification-options')
+      .then((res) => res.json())
+      .then((data) => {
+        setTypes(data.types || []);
+        setSubtypes(data.subtypes || []);
+        setUseCases(data.useCases || []);
+      })
+      .catch((err) => {
+        console.error('❌ Failed to load classification options:', err);
+      });
+  }, []);
+
+  useEffect(() => {
+    const stored = localStorage.getItem('campaignData');
+    if (stored) {
+      const parsed = JSON.parse(stored);
+      setCampaignId(parsed.campaignId);
+      setClassification(parsed.classification);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!classification || types.length === 0 || subtypes.length === 0 || useCases.length === 0) return;
+    const typeMatch = types.find(t => t.name.toLowerCase() === classification.primary_type?.toLowerCase());
+    const subtypeMatch = subtypes.find(s => s.name.toLowerCase() === classification.secondary_type?.toLowerCase());
+    const useCaseMatch = useCases.find(u => u.name.toLowerCase() === classification.sub_type?.toLowerCase());
+    if (typeMatch) setPrimaryTypeId(typeMatch.id);
+    if (subtypeMatch) setSecondaryTypeId(subtypeMatch.id);
+    if (useCaseMatch) setUseCaseId(useCaseMatch.id);
+  }, [types, subtypes, useCases, classification]);
+
+  const handleSave = async () => {
+    console.log('🔘 Save button clicked');
+    if (!user?.uid || !campaignId) {
+      console.error('❌ Missing user or campaign ID');
+      return;
+    }
+
+    const typeName = types.find(t => t.id === primaryTypeId)?.name || '';
+    const subtypeName = subtypes.find(s => s.id === secondaryTypeId)?.name || '';
+    const useCaseName = useCases.find(u => u.id === useCaseId)?.name || '';
+
+    console.log('📦 Saving to Firestore with classification:', {
+      primary_type: typeName,
+      secondary_type: subtypeName,
+      sub_type: useCaseName,
+    });
+
+    try {
+      const ref = doc(db, 'users', user.uid, 'campaigns', campaignId);
+      await updateDoc(ref, {
+        classification: {
+          primary_type: typeName,
+          secondary_type: subtypeName,
+          sub_type: useCaseName,
+        },
+      });
+      console.log('✅ Classification updated in Firestore');
+      setSaveSuccess(true);
+      setTimeout(() => navigate('/campaign/next-steps'), 1200);
+    } catch (err) {
+      console.error('❌ Error saving classification:', err);
+    }
+  };
+
+  const filteredSubtypes = subtypes.filter(s => s.type_id === primaryTypeId);
+  const subtypeCore = secondaryTypeId?.split('_').pop();
+  const filteredUseCases = useCases.filter(u => u.subtype_id === subtypeCore);
+
+  return (
+    <div className="p-6 max-w-3xl mx-auto">
+      <h2 className="text-xl font-bold mb-4">Review and Update Campaign Classification</h2>
+
+      <label className="block mb-2 font-semibold">Primary Type</label>
+      <select
+        className="w-full p-2 border rounded mb-4"
+        value={primaryTypeId}
+        onChange={(e) => setPrimaryTypeId(e.target.value)}
+      >
+        <option value="">-- Select Primary Type --</option>
+        {types.map((type) => (
+          <option key={type.id} value={type.id}>{type.name}</option>
+        ))}
+      </select>
+
+      <label className="block mb-2 font-semibold">Secondary Type</label>
+      <select
+        className="w-full p-2 border rounded mb-4"
+        value={secondaryTypeId}
+        onChange={(e) => setSecondaryTypeId(e.target.value)}
+      >
+        <option value="">-- Select Secondary Type --</option>
+        {filteredSubtypes.map((subtype) => (
+          <option key={subtype.id} value={subtype.id}>{subtype.name}</option>
+        ))}
+      </select>
+
+      <label className="block mb-2 font-semibold">Use Case</label>
+      <select
+        className="w-full p-2 border rounded mb-6"
+        value={useCaseId}
+        onChange={(e) => setUseCaseId(e.target.value)}
+      >
+        <option value="">-- Select Use Case --</option>
+        {filteredUseCases.map((uc) => (
+          <option key={uc.id} value={uc.id}>{uc.name}</option>
+        ))}
+      </select>
+
+      <button
+        onClick={handleSave}
+        className="bg-blue-600 text-white px-6 py-2 rounded hover:bg-blue-700 transition"
+      >
+        Save Classification
+      </button>
+
+      {saveSuccess && (
+        <p className="mt-4 text-green-600 font-semibold">✔ Classification saved. Redirecting…</p>
+      )}
+    </div>
+  );
+}

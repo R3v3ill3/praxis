@@ -1,19 +1,18 @@
+// OnboardingChat.jsx (fully featured)
 import React, { useEffect, useRef, useState } from 'react';
-import { db } from '../firebase';
-import { doc, setDoc } from 'firebase/firestore';
 import { getAuth } from 'firebase/auth';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 
 export default function OnboardingChat() {
-  const [messages, setMessages] = useState([]);
+  const location = useLocation();
   const [stepIndex, setStepIndex] = useState(0);
-  const [answers, setAnswers] = useState({});
-  const [otherInput, setOtherInput] = useState('');
+  const [answers, setAnswers] = useState(location.state?.answers || {});
   const [multiSelect, setMultiSelect] = useState([]);
   const [awaitingOtherInput, setAwaitingOtherInput] = useState(false);
+  const [otherInput, setOtherInput] = useState('');
   const scrollRef = useRef(null);
-  const auth = getAuth();
   const navigate = useNavigate();
+  const auth = getAuth();
 
   const steps = [
     {
@@ -58,206 +57,116 @@ export default function OnboardingChat() {
       required: false,
       multi: true,
       options: [
-        'Action Network',
-        'Yabbr',
-        'NationBuilder',
-        'Mailchimp',
-        'Hootsuite',
-        'Canva',
-        'HubSpot',
-        'Zoho Campaigns',
-        'Other',
+        'Action Network', 'Yabbr', 'NationBuilder', 'Mailchimp', 'Hootsuite',
+        'Canva', 'HubSpot', 'Zoho Campaigns', 'Other',
       ],
     },
   ];
 
-  useEffect(() => {
-    if (stepIndex === 0) {
-      setMessages([
-        { sender: 'bot', text: '👋 Welcome! Let’s get to know your organisation so we can tailor the platform to your needs.' },
-        { sender: 'bot', text: steps[0].question }
-      ]);
-    }
-  }, []);
+  const currentStep = steps[stepIndex];
 
-  useEffect(() => {
-    scrollRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
-
-  const handleSelect = (option) => {
-    const step = steps[stepIndex];
-    const key = step.key;
-
-    if (step.multi) {
-      setMultiSelect((prev) =>
-        prev.includes(option) ? prev.filter((item) => item !== option) : [...prev, option]
-      );
-      return;
-    }
-
-    const updatedAnswers = { ...answers, [key]: option };
-    setAnswers(updatedAnswers);
-    setMessages((prev) => [...prev, { sender: 'user', text: option }]);
-
-    if (option === 'Other') {
-      setTimeout(() => {
-        setMessages(prev => [...prev, { sender: 'bot', text: 'Please specify:' }]);
-        setAwaitingOtherInput(true);
-      }, 500);
-      return;
-    }
-
-    advanceStep(updatedAnswers);
-  };
-
-  const handleMultiSubmit = () => {
-    const step = steps[stepIndex];
-    if (multiSelect.includes('Other')) {
-      setMessages(prev => [...prev, { sender: 'bot', text: 'Please specify what "Other" refers to:' }]);
+  const handleSingleSelect = (value) => {
+    if (value === 'Other') {
       setAwaitingOtherInput(true);
-      return;
+    } else {
+      updateAnswer(currentStep.key, value);
     }
-
-    const updatedAnswers = { ...answers, [step.key]: multiSelect };
-    setAnswers(updatedAnswers);
-    setMessages((prev) => [...prev, { sender: 'user', text: multiSelect.join(', ') }]);
-    setMultiSelect([]);
-    advanceStep(updatedAnswers);
   };
 
   const handleOtherSubmit = () => {
-    const step = steps[stepIndex];
-    const updatedAnswers = { ...answers };
-
-    if (step.key === 'tech_stack') {
-      const stack = multiSelect.filter(tool => tool !== 'Other');
-      stack.push(otherInput.trim());
-      updatedAnswers[step.key] = stack;
-      setMessages(prev => [...prev, { sender: 'user', text: otherInput.trim() }]);
-      setMultiSelect([]);
-    } else {
-      updatedAnswers[step.key] = otherInput;
-      setMessages(prev => [...prev, { sender: 'user', text: otherInput }]);
+    if (otherInput.trim()) {
+      updateAnswer(currentStep.key, otherInput.trim());
+      setOtherInput('');
+      setAwaitingOtherInput(false);
     }
+  };
 
-    setAnswers(updatedAnswers);
+  const handleMultiToggle = (value) => {
+    setMultiSelect(prev =>
+      prev.includes(value) ? prev.filter(v => v !== value) : [...prev, value]
+    );
+  };
+
+  const handleMultiSubmit = () => {
+    const final = multiSelect.includes('Other') && otherInput.trim()
+      ? [...multiSelect.filter(v => v !== 'Other'), otherInput.trim()]
+      : multiSelect;
+    updateAnswer(currentStep.key, final);
+    setMultiSelect([]);
     setOtherInput('');
     setAwaitingOtherInput(false);
-    advanceStep(updatedAnswers);
   };
 
-  const advanceStep = async (updatedAnswers) => {
-    const nextStepIndex = stepIndex + 1;
-
-    if (nextStepIndex < steps.length) {
-      setTimeout(() => {
-        setMessages(prev => [...prev, { sender: 'bot', text: steps[nextStepIndex].question }]);
-        setStepIndex(nextStepIndex);
-      }, 500);
+  const updateAnswer = (key, value) => {
+    const updated = { ...answers, [key]: value };
+    setAnswers(updated);
+    if (stepIndex + 1 < steps.length) {
+      setStepIndex(stepIndex + 1);
     } else {
-      setTimeout(async () => {
-        setMessages(prev => [...prev, { sender: 'bot', text: '✅ Thanks! You’ve completed the onboarding.' }]);
-        setStepIndex(nextStepIndex);
-        try {
-          const user = auth.currentUser;
-          if (user) {
-            await setDoc(doc(db, 'organisations', user.uid), {
-              ...updatedAnswers,
-              completedAt: new Date(),
-            });
-            navigate('/dashboard');
-          } else {
-            setMessages(prev => [...prev, { sender: 'bot', text: '⚠️ User not authenticated — unable to save.' }]);
-          }
-        } catch (err) {
-          console.error('Error saving onboarding data:', err);
-          setMessages(prev => [...prev, { sender: 'bot', text: '⚠️ Something went wrong while saving.' }]);
-        }
-      }, 500);
+      navigate('/onboarding/summary', { state: { answers: updated } });
     }
   };
 
-  const currentStep = stepIndex < steps.length ? steps[stepIndex] : null;
-
   return (
-    <div className="p-4 flex flex-col h-full max-w-3xl mx-auto">
-      <div className="mb-4">
-        <h2 className="text-2xl font-bold">Organisational Onboarding</h2>
-        <p className="text-gray-700">Answer a few questions to help us tailor your campaign tools.</p>
-      </div>
-
-      <div className="flex-1 overflow-auto space-y-2 mb-4 max-h-[60vh] border rounded p-4 bg-white shadow-sm">
-        {messages.map((m, i) => (
-          <div
-            key={i}
-            className={`p-2 rounded max-w-[80%] ${
-              m.sender === 'user' ? 'bg-blue-100 self-end text-right' : 'bg-gray-100 self-start'
-            }`}
-          >
-            {m.text}
-          </div>
-        ))}
-        <div ref={scrollRef} />
-      </div>
-
-      {currentStep && currentStep.options && !currentStep.multi && !awaitingOtherInput && (
-        <div className="flex flex-col gap-2">
-          {currentStep.options.map((option) => (
-            <button
-              key={option}
-              onClick={() => handleSelect(option)}
-              className="w-full px-4 py-2 bg-blue-100 hover:bg-blue-200 rounded text-left"
-            >
-              {option}
-            </button>
-          ))}
-        </div>
-      )}
-
-      {currentStep && currentStep.multi && !awaitingOtherInput && (
-        <div className="space-y-2">
-          <div className="grid grid-cols-2 gap-2">
-            {currentStep.options.map((option) => (
+    <div className="p-4 max-w-xl mx-auto">
+      <h2 className="text-xl font-bold mb-4">Onboarding</h2>
+      <p className="mb-4">{currentStep.question}</p>
+      <div className="space-y-2">
+        {currentStep.multi ? (
+          <>
+            {currentStep.options.map(opt => (
               <button
-                key={option}
-                onClick={() => handleSelect(option)}
-                className={`px-3 py-2 rounded ${
-                  multiSelect.includes(option)
-                    ? 'bg-blue-600 text-white'
-                    : 'bg-blue-100 hover:bg-blue-200'
+                key={opt}
+                className={`block w-full text-left px-4 py-2 border rounded ${
+                  multiSelect.includes(opt) ? 'bg-blue-600 text-white' : 'bg-gray-100'
                 }`}
+                onClick={() => handleMultiToggle(opt)}
               >
-                {option}
+                {opt}
               </button>
             ))}
-          </div>
-          <button
-            onClick={handleMultiSubmit}
-            className="w-full mt-2 px-4 py-2 bg-blue-600 text-white rounded"
-            disabled={multiSelect.length === 0}
-          >
-            Submit
-          </button>
-        </div>
-      )}
-
-      {awaitingOtherInput && (
-        <div className="flex space-x-2 mt-2">
-          <input
-            value={otherInput}
-            onChange={(e) => setOtherInput(e.target.value)}
-            className="flex-1 p-2 border rounded"
-            placeholder="Type your answer"
-          />
-          <button
-            onClick={handleOtherSubmit}
-            className="px-4 py-2 bg-blue-600 text-white rounded"
-            disabled={!otherInput.trim()}
-          >
-            Submit
-          </button>
-        </div>
-      )}
+            {multiSelect.includes('Other') && (
+              <input
+                className="w-full mt-2 p-2 border rounded"
+                value={otherInput}
+                onChange={e => setOtherInput(e.target.value)}
+                placeholder="Please specify"
+              />
+            )}
+            <button
+              className="mt-4 px-4 py-2 bg-green-600 text-white rounded"
+              onClick={handleMultiSubmit}
+            >
+              Submit
+            </button>
+          </>
+        ) : awaitingOtherInput ? (
+          <>
+            <input
+              className="w-full p-2 border rounded"
+              value={otherInput}
+              onChange={e => setOtherInput(e.target.value)}
+              placeholder="Please specify"
+            />
+            <button
+              className="mt-2 px-4 py-2 bg-green-600 text-white rounded"
+              onClick={handleOtherSubmit}
+            >
+              Continue
+            </button>
+          </>
+        ) : (
+          currentStep.options.map(opt => (
+            <button
+              key={opt}
+              className="block w-full text-left px-4 py-2 border rounded bg-gray-100 hover:bg-blue-100"
+              onClick={() => handleSingleSelect(opt)}
+            >
+              {opt}
+            </button>
+          ))
+        )}
+      </div>
     </div>
   );
 }

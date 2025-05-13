@@ -1,24 +1,2 @@
-cat > .gitignore <<EOF
-# Node & Build
 node_modules/
-dist/
-build/
-npm-debug.log*
-
-# Environment files
-.env*
-firebase-debug.log
-
-# macOS & Editor Junk
-.DS_Store
-._*
-*.swp
-*.swo
-*.lock
-
-# Office temp files (Excel, Word)
-~$*
-
-# Logs
-*.log
-EOF
+node_modules/

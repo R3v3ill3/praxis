@@ -14,9 +14,15 @@ function ErrorFallback({ error }) {
 }
 
 // Lazy-load key pages
+const LandingPage = lazy(() => import('./pages/LandingPage.jsx'));
+const Signup = lazy(() => import('./pages/Signup.jsx'));
+const Login = lazy(() => import('./pages/Login.jsx'));
 const Dashboard = lazy(() => import('./pages/Dashboard.jsx'));
 const OnboardingChat = lazy(() => import('./pages/OnboardingChat.jsx'));
+const OnboardingSummary = lazy(() => import('./pages/OnboardingSummary.jsx'));
 const CampaignBuilder = lazy(() => import('./pages/CampaignBuilder.jsx'));
+const CampaignNextSteps = lazy(() => import('./pages/CampaignNextSteps'));
+const EditCampaignClassification = lazy(() => import('./pages/EditCampaignClassification'));
 const MessagingAssistant = lazy(() => import('./pages/MessagingAssistant.jsx'));
 const MessagingForm = lazy(() => import('./pages/MessagingForm.jsx'));
 // Add other pages below as needed
@@ -27,9 +33,15 @@ export default function App() {
     <ErrorBoundary FallbackComponent={ErrorFallback}>
       <Suspense fallback={<div className="p-4 text-gray-600">Loading…</div>}>
         <Routes>
+          <Route path="/" element={<LandingPage />} />
+          <Route path="/signup" element={<Signup />} />
+          <Route path="/login" element={<Login />} />
           <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/onboarding" element={<OnboardingChat />} />
+          <Route path="/onboarding/summary" element={<OnboardingSummary />} />
           <Route path="/campaign-builder" element={<CampaignBuilder />} />
+          <Route path="/campaign/next-steps" element={<CampaignNextSteps />} />
+          <Route path="/campaign/classification-review/:campaignId" element={<EditCampaignClassification />} />
           <Route path="/app/campaign/message" element={<MessagingAssistant />} />
           <Route path="/app/campaign/message-form" element={<MessagingForm />} />
           {/* Add additional routes here */}

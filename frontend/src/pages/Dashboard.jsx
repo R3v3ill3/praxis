@@ -1,4 +1,3 @@
-
 import React, { useEffect, useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { useCampaign } from '../contexts/CampaignContext';
@@ -46,23 +45,26 @@ export default function Dashboard() {
                 <ul className="list-disc pl-6 space-y-2">
                   {campaigns.map((campaign) => (
                     <li key={campaign.id} className="text-gray-800">
-                      <strong>{campaign.name}</strong> – {campaign.summary?.purpose || 'No summary yet'}
+                      <strong>{campaign.name}</strong> – {campaign.summary}
                     </li>
                   ))}
                 </ul>
               ) : (
-                <>
-                  <p>No campaigns found yet.</p>
-                  <div className="mt-4">
-                    <a href="/campaign-builder" className="inline-block bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">
-                      Start a New Campaign
-                    </a>
-                  </div>
-                </>
+                <p>No campaigns found yet.</p>
               )}
             </>
           )}
-        </CardContent>
+        
+              <div className="mt-6">
+                <a
+                  href="/campaign-builder"
+                  className="inline-block bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700"
+                >
+                  Start a New Campaign
+                </a>
+              </div>
+    
+    </CardContent>
       </Card>
     </div>
   );

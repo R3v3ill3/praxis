@@ -1,144 +1,109 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { Textarea } from '../components/ui/Textarea';
-import { Button } from '../components/ui/Button';
-import { useToast } from '../components/ui/use-toast';
-import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/Card';
+// frontend/src/pages/CampaignBuilder.jsx
+import React, { useState } from 'react';
+import { useAuth } from '../contexts/AuthContext';
 import { useCampaign } from '../contexts/CampaignContext';
+import { useNavigate } from 'react-router-dom';
+import { db } from '../firebase';
+import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
 
 export default function CampaignBuilder() {
-  const [input, setInput] = useState('');
-  const [history, setHistory] = useState([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(null);
+  const { user: currentUser } = useAuth();
+  if (!currentUser) {
+    return <div className="p-4 text-center text-gray-600">Loading your profile…</div>;
+  }
+  const userId = currentUser.uid;
+  console.log("[CampaignBuilder] currentUser:", currentUser);
+  const { updateCampaignData } = useCampaign();
   const navigate = useNavigate();
-  const { toast } = useToast();
-  const { updateCampaignData, resetCampaignData } = useCampaign();
-  const chatBoxRef = useRef(null);
 
-  useEffect(() => {
-    resetCampaignData();
-  }, []);
-
-  useEffect(() => {
-    if (chatBoxRef.current) {
-      chatBoxRef.current.scrollTop = chatBoxRef.current.scrollHeight;
-    }
-  }, [history]);
-
-  const classifyCampaign = async (summary) => {
-    try {
-      const response = await fetch('/api/classify-campaign-type', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ summary }),
-      });
-
-      const data = await response.json();
-
-      if (response.ok && data.match) {
-        updateCampaignData({ classification: data.match });
-        console.log('✅ Classification stored in context:', data.match);
-      } else {
-        console.warn('⚠️ No classification match returned.');
-      }
-    } catch (error) {
-      console.error('❌ Error during campaign classification:', error);
-    }
-  };
+  const [messages, setMessages] = useState([]);
+  const [input, setInput] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const chatRef = React.useRef(null);
 
   const sendMessage = async () => {
     if (!input.trim()) return;
 
-    const newHistory = [...history, { role: 'user', content: input }];
-    setHistory(newHistory);
-    setInput('');
+    const userMessage = { role: 'user', content: input.trim() };
+    const newMessages = [...messages, userMessage];
+    setMessages(newMessages);
     setLoading(true);
-    setError(null);
+    setError('');
 
     try {
       const response = await fetch('/api/campaign-assistant', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ input, history: newHistory }),
+        body: JSON.stringify({ input: input.trim(), history: newMessages }),
       });
 
       const data = await response.json();
-      const { aiMessage, done, ...summary } = data;
+      const aiMessage = { role: 'assistant', content: data.aiMessage };
+      setMessages((prev) => [...prev, aiMessage]);
+      setTimeout(() => chatRef.current?.scrollTo(0, chatRef.current.scrollHeight), 100);
 
-      setHistory((prev) => [...prev, { role: 'assistant', content: aiMessage }]);
+      if (data.done && data.structured) {
+        const classificationRes = await fetch('/api/classify-campaign-type', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ summary: data }),
+        });
 
-      if (done) {
-        updateCampaignData({ summary });
-        await classifyCampaign(summary);
-        navigate('/app/campaign/message');
+        const { match } = await classificationRes.json();
+        const campaignRecord = {
+          userId: userId,
+          summary: data,
+          classification: match,
+          createdAt: serverTimestamp(),
+        };
+
+        await setDoc(doc(db, 'campaigns', currentUser.uid), campaignRecord);
+        updateCampaignData(campaignRecord);
+        navigate('/campaign/next-steps');
       }
     } catch (err) {
-      console.error('❌ Error in AI assistant:', err);
-      toast({
-        variant: 'destructive',
-        title: 'Assistant error',
-        description: 'Something went wrong while talking to the AI.',
-      });
-      setError('Failed to communicate with assistant.');
+      console.error('Error:', err);
+      setError('Something went wrong. Please try again.');
     } finally {
+      setInput('');
       setLoading(false);
     }
   };
 
-  const handleKeyDown = (e) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      sendMessage();
-    }
-  };
-
   return (
-    <div className="container py-8">
-      <Card className="max-w-3xl mx-auto">
-        <CardHeader>
-          <CardTitle>Describe Your Campaign</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-4">
-            <div
-              ref={chatBoxRef}
-              className="max-h-[300px] overflow-y-auto border rounded p-4 bg-gray-50 flex flex-col gap-2"
-            >
-              {history.length === 0 && (
-                <p className="text-muted-foreground">Start by describing what you’re working on…</p>
-              )}
-              {history.map((msg, idx) => (
-                <div
-                  key={idx}
-                  className={`px-4 py-2 rounded max-w-[80%] text-sm whitespace-pre-wrap ${
-                    msg.role === 'user'
-                      ? 'bg-blue-500 text-white self-end ml-auto'
-                      : 'bg-gray-200 text-gray-800 self-start mr-auto'
-                  }`}
-                >
-                  <strong>{msg.role === 'user' ? 'You' : 'Assistant'}:</strong> {msg.content}
-                </div>
-              ))}
-            </div>
+    <div className="p-4 max-w-3xl mx-auto">
+      <h2 className="text-2xl font-bold mb-4">Describe Your Campaign</h2>
 
-            <Textarea
-              placeholder="Type your message and hit Enter…"
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={handleKeyDown}
-              rows={3}
-              disabled={loading}
-            />
-
-            <Button onClick={sendMessage} disabled={loading || !input.trim()}>
-              {loading ? 'Thinking…' : 'Send'}
-            </Button>
-
-            {error && <p className="text-red-500 text-sm">{error}</p>}
+      <div className="border rounded p-4 mb-4 bg-gray-50 max-h-[50vh] overflow-y-auto" ref={chatRef}>
+        {messages.map((msg, i) => (
+          <div key={i} className={`mb-2 ${msg.role === 'user' ? 'text-right' : 'text-left'}`}>
+            <span className={`inline-block px-4 py-2 rounded-lg shadow max-w-[80%] ${msg.role === 'user' ? 'bg-blue-500 text-white' : 'bg-gray-200 text-black'}`}>
+              {msg.content}
+            </span>
           </div>
-        </CardContent>
-      </Card>
+        ))}
+      </div>
+
+      <textarea
+        rows={3}
+        className="w-full border rounded p-2 mb-2"
+        placeholder="Type your message..."
+        value={input}
+        onChange={(e) => setInput(e.target.value)}
+        onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); } }}
+        disabled={loading}
+      />
+
+      <button
+        onClick={sendMessage}
+        className="w-full bg-blue-600 text-white py-2 rounded hover:bg-blue-700"
+        disabled={loading}
+      >
+        {loading ? 'Thinking...' : 'Send'}
+      </button>
+
+      {error && <p className="mt-2 text-red-600">{error}</p>}
     </div>
   );
 }
