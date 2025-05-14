@@ -1,15 +1,16 @@
 // backend-node/routes/campaign-assistant.js
 import express from 'express';
 import OpenAI from 'openai';
-import dotenv from 'dotenv';
+//import dotenv from 'dotenv';
 // Using the dotenv setup that was confirmed to be working for you:
-import path from 'path';
-import { fileURLToPath } from 'url';
+//import path from 'path';
+//import { fileURLToPath } from 'url';
+console.log("✅ Runtime OPENAI_API_KEY =", process.env.OPENAI_API_KEY);
+//const __filename = fileURLToPath(import.meta.url);
+//const __dirname = path.dirname(__filename);
+//dotenv.config({ path: path.resolve(__dirname, '../.env') });
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-dotenv.config({ path: path.resolve(__dirname, '../.env') });
-
+import { mapGoalsToCanonical, formatCanonicalGoalsForFirestore } from './goal-mapping.js';
 const router = express.Router();
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
@@ -128,6 +129,16 @@ Your goal is to collect the following structured summary:
   • problem: what’s driving the campaign (optional)
   • goals: Ask the user for up to 4 key goals for THIS campaign. List them clearly as bullet points or a simple list. Examples: participation, membership, activism, donation, vote, corporate decision, political decision, issue awareness, issue support.
 
+After listing the freeform goals, also include a canonical goal classification underneath each one, formatted like this:
+
+  - Recruit new members to the fund  
+    → Goal Type: membership
+
+Only use the following allowed canonical goal types:
+  participation, membership, activism, donation, sales, vote, corporate decision, political decision, issue awareness, issue support, other
+
+If a goal does not clearly match any of the above, classify it as: other
+
 After gathering the above, ALSO make your best guess at the campaign's classification based on ALL the information discussed.
 Present this guess in the summary. Your available classification options are (these are examples to guide you, the user will confirm/edit later):
 - Primary Types: union, environmental, community_activism, social_enterprise
@@ -184,7 +195,10 @@ Then, conclude EXACTLY with this phrase on a new line, with no extra text:
 
         // Check if the main summary structure was parsed successfully
         if (parsedData && parsedData.summary && parsedData.summary.structured) {
-            responsePayload = {
+                            const canonicalGoals = mapGoalsToCanonical(parsedData.summary.goals);
+                const firestoreFormattedGoals = formatCanonicalGoalsForFirestore(canonicalGoals);
+                responsePayload.goals = firestoreFormattedGoals;
+responsePayload = {
                 summary: parsedData.summary,
                 classification_guess: parsedData.classification_guess, // Will be null if not found
                 aiMessage: rawMessage,

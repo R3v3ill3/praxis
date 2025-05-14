@@ -12,6 +12,11 @@ import CampaignBuilder from './pages/CampaignBuilder';
 import CampaignPlan from './pages/CampaignPlan';
 import CampaignMessagingGuide from './pages/CampaignMessagingGuide';
 import CampaignReviewSave from './pages/CampaignReviewSave';
+import {
+  EditClassificationPage,
+  ConfirmGoalsPage,
+  RankGoalsPage
+} from './pages/CampaignStepRoutes';
 import ContentGenerator from './pages/ContentGenerator';
 
 export default function App() {
@@ -50,7 +55,10 @@ export default function App() {
         <Route path="/app/campaign/message" element={<CampaignMessagingGuide />} />
         <Route path="/campaign/review" element={<CampaignReviewSave />} />
         <Route path="/campaign/content" element={<ContentGenerator />} />
-      </Routes>
+              <Route path="/app/campaign/edit-classification" element={<EditClassificationPage />} />
+        <Route path="/app/campaign/confirm-goals" element={<ConfirmGoalsPage />} />
+        <Route path="/app/campaign/rank-goals" element={<RankGoalsPage />} />
+        </Routes>
       {/* Log right after the Routes component */}
       {console.log("--- App.jsx: After <Routes> ---")}
     </>

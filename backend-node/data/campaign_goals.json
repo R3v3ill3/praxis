@@ -38,5 +38,9 @@
   {
     "id": "issue_support",
     "name": "issue support"
+  },
+  {
+    "id": "other",
+    "name": "other"
   }
 ]

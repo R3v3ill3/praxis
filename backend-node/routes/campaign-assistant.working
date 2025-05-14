@@ -2,69 +2,79 @@
 import express from 'express';
 import OpenAI from 'openai';
 import dotenv from 'dotenv';
+// Using the dotenv setup that was confirmed to be working for you:
 import path from 'path';
 import { fileURLToPath } from 'url';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 dotenv.config({ path: path.resolve(__dirname, '../.env') });
+
 const router = express.Router();
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-// 🔒 PROMPT_VERSION: v1.3.3-unranked-goals — DO NOT simplify without explicit instruction
+// 🔒 PROMPT_VERSION: v1.3.4-ai-classification-guess — Preserving full original detail
 
-function parseStructuredSummary(text) {
-    const summary = {};
-    const goals = [];
+// Updated parser to extract summary AND the AI's classification guess
+function parseSummaryAndClassification(text) {
+    const summary = { goals: [] }; // Initialize goals as array
+    let classification_guess = { primary_type: null, secondary_type: null, use_case: null }; // Initialize guess
     let collectingGoals = false;
+    let collectingClassification = false;
     const lines = text.split('\n');
 
     lines.forEach(line => {
         const trimmedLine = line.trim();
-        // Reset goal collection if we hit the final marker or a new section that is not '- **Goals:**'
-        if (trimmedLine.startsWith('✅ Final summary complete') || (trimmedLine.startsWith('- **') && !trimmedLine.startsWith('- **Goals:**'))) {
+
+        // Reset flags if we hit the final marker or a new major section
+        if (trimmedLine.startsWith('✅ Final summary complete') ||
+            (trimmedLine.startsWith('- **') &&
+             !trimmedLine.startsWith('- **Goals:**') &&
+             !trimmedLine.startsWith('- **Initial Classification Guess:**'))) {
             collectingGoals = false;
+            collectingClassification = false;
         }
 
-        if (trimmedLine.startsWith('- **Purpose:**')) {
-            summary.purpose = trimmedLine.substring('- **Purpose:**'.length).trim();
-        } else if (trimmedLine.startsWith('- **Audience:**')) {
-            summary.audience = trimmedLine.substring('- **Audience:**'.length).trim();
-        } else if (trimmedLine.startsWith('- **Target:**')) {
-            summary.target = trimmedLine.substring('- **Target:**'.length).trim();
-        } else if (trimmedLine.startsWith('- **Intent:**')) {
-            summary.intent = trimmedLine.substring('- **Intent:**'.length).trim();
-        } else if (trimmedLine.startsWith('- **Location:**')) {
-            summary.location = trimmedLine.substring('- **Location:**'.length).trim();
-        } else if (trimmedLine.startsWith('- **Problem:**')) {
-            summary.problem = trimmedLine.substring('- **Problem:**'.length).trim();
-        } else if (trimmedLine.startsWith('- **Goals:**')) {
+        if (trimmedLine.startsWith('- **Purpose:**')) summary.purpose = trimmedLine.substring('- **Purpose:**'.length).trim();
+        else if (trimmedLine.startsWith('- **Audience:**')) summary.audience = trimmedLine.substring('- **Audience:**'.length).trim();
+        else if (trimmedLine.startsWith('- **Target:**')) summary.target = trimmedLine.substring('- **Target:**'.length).trim();
+        else if (trimmedLine.startsWith('- **Intent:**')) summary.intent = trimmedLine.substring('- **Intent:**'.length).trim();
+        else if (trimmedLine.startsWith('- **Location:**')) summary.location = trimmedLine.substring('- **Location:**'.length).trim();
+        else if (trimmedLine.startsWith('- **Problem:**')) summary.problem = trimmedLine.substring('- **Problem:**'.length).trim();
+        else if (trimmedLine.startsWith('- **Goals:**')) {
             collectingGoals = true;
+            collectingClassification = false;
+        } else if (trimmedLine.startsWith('- **Initial Classification Guess:**')) {
+            collectingClassification = true;
+            collectingGoals = false;
         } else if (collectingGoals) {
-            // More robustly capture bulleted or simple list items under "Goals:"
-            // Check if the line starts with typical bullet points or is just non-empty text not starting a new section
             const goalMatch = trimmedLine.match(/^[-*•\s]*\s*(.*)/);
             if (goalMatch && goalMatch[1] && goalMatch[1].trim() !== '' && !trimmedLine.startsWith('- **')) {
-                goals.push(goalMatch[1].trim());
+                summary.goals.push(goalMatch[1].trim());
             }
+        } else if (collectingClassification) {
+            if (trimmedLine.startsWith('- Primary Type:')) classification_guess.primary_type = trimmedLine.substring('- Primary Type:'.length).trim() || null;
+            else if (trimmedLine.startsWith('- Secondary Type:')) classification_guess.secondary_type = trimmedLine.substring('- Secondary Type:'.length).trim() || null;
+            else if (trimmedLine.startsWith('- Use Case:')) classification_guess.use_case = trimmedLine.substring('- Use Case:'.length).trim() || null;
         }
     });
 
-    if (goals.length > 0) {
-        summary.goals = goals; // Unranked goals
-    }
-
-    // Check if essential fields were parsed
+    // Determine if the core summary structure is present
     if (summary.purpose && summary.audience && summary.target) {
         summary.structured = true;
-        if (!summary.goals) { // Ensure goals array exists, even if empty
-             summary.goals = [];
-        }
-        return summary;
+        if (!summary.goals) summary.goals = []; // Ensure goals array exists
+    } else {
+        summary.structured = false;
+        console.warn("[campaign-assistant] parseSummaryAndClassification: Failed to parse core summary fields (purpose, audience, target). Summary:", summary);
     }
 
-    console.warn("[campaign-assistant] parseStructuredSummary: Failed to parse core fields (purpose, audience, target). Summary:", summary);
-    return null; // Return null if core fields are missing
+    // Return null for classification_guess if no parts of it were found
+    const guessValues = Object.values(classification_guess);
+    if (guessValues.every(val => val === null || val === '')) {
+        classification_guess = null;
+    }
+
+    return { summary, classification_guess };
 }
 
 function detectFinalSummaryMessage(message) {
@@ -116,9 +126,25 @@ Your goal is to collect the following structured summary:
   • intent: “growth” (recruitment, engagement, fundraising) or “change” (winning a demand)
   • location: where is this happening? (e.g. hospital, warehouse, city/state)
   • problem: what’s driving the campaign (optional)
-  • goals: Ask the user for **up to 4 key goals for THIS campaign.** List them clearly as bullet points or a simple list. Examples: participation, membership, activism, donation, vote, corporate decision, political decision, issue awareness, issue support.
+  • goals: Ask the user for up to 4 key goals for THIS campaign. List them clearly as bullet points or a simple list. Examples: participation, membership, activism, donation, vote, corporate decision, political decision, issue awareness, issue support.
 
-Once complete, respond with:
+After listing the freeform goals, also include a canonical goal classification underneath each one, formatted like this:
+
+  - Recruit new members to the fund  
+    → Goal Type: membership
+
+Only use the following allowed canonical goal types:
+  participation, membership, activism, donation, sales, vote, corporate decision, political decision, issue awareness, issue support, other
+
+If a goal does not clearly match any of the above, classify it as: other
+
+After gathering the above, ALSO make your best guess at the campaign's classification based on ALL the information discussed.
+Present this guess in the summary. Your available classification options are (these are examples to guide you, the user will confirm/edit later):
+- Primary Types: union, environmental, community_activism, social_enterprise
+- Secondary Types are linked to Primary Types (e.g., union can be Industrial or political; environmental can be political or Corporate).
+- Use Cases are linked to Secondary Types (e.g., union/political can be a Decision or electoral campaign; union/industrial can be a workplace campaign).
+
+When finished, format the summary EXACTLY like this example:
 
 Here is the summary:
 
@@ -131,8 +157,10 @@ Here is the summary:
 - **Goals:**
   - [goal 1 as a bullet or simple list item]
   - [goal 2 as a bullet or simple list item]
-  - [goal 3 as a bullet or simple list item]
-  - [optional goal 4 as a bullet or simple list item]
+- **Initial Classification Guess:**
+  - Primary Type: [AI's guess for primary type, e.g., union]
+  - Secondary Type: [AI's guess for secondary type, e.g., Industrial]
+  - Use Case: [AI's guess for use case, e.g., workplace]
 
 Then, conclude EXACTLY with this phrase on a new line, with no extra text:
 ✅ Final summary complete
@@ -161,31 +189,37 @@ Then, conclude EXACTLY with this phrase on a new line, with no extra text:
     let responsePayload = {};
 
     if (isFinalSummary) {
-        console.log(`[campaign-assistant] INFO: Final summary marker detected. Attempting to parse structure.`);
-        const parsedSummary = parseStructuredSummary(rawMessage);
+        console.log(`[campaign-assistant] INFO: Final summary marker detected. Attempting to parse structure and classification guess.`);
+        const parsedData = parseSummaryAndClassification(rawMessage); // Use the new parser
 
-        if (parsedSummary) {
-            console.log(`[campaign-assistant] INFO: Successfully parsed structured summary. Goals (unranked):`, parsedSummary.goals);
+        // Check if the main summary structure was parsed successfully
+        if (parsedData && parsedData.summary && parsedData.summary.structured) {
             responsePayload = {
-                ...parsedSummary, // Includes purpose, audience, target, goals (unranked array), etc.
+                summary: parsedData.summary,
+                classification_guess: parsedData.classification_guess, // Will be null if not found
                 aiMessage: rawMessage,
                 done: true,
                 structured: true
             };
+            console.log(`[campaign-assistant] INFO: Successfully parsed summary and classification guess.`);
         } else {
-            console.warn(`[campaign-assistant] WARN: Failed to parse structure from final summary text, though marker was present.`);
+            // Summary structure parsing failed, even if marker was present
+            console.warn(`[campaign-assistant] WARN: Failed to parse core summary structure from final summary text, though marker was present.`);
             responsePayload = {
+                summary: parsedData?.summary || null, // Send what was partially parsed, if anything
+                classification_guess: parsedData?.classification_guess || null,
                 aiMessage: rawMessage,
                 done: true, // Still "done" because marker was found
-                structured: false // But structure parsing failed
+                structured: false // But core summary structure parsing failed
             };
         }
     } else {
-        // console.log(`[campaign-assistant] INFO: Assistant response is not final summary.`);
+        // Not the final summary yet
         responsePayload = {
             aiMessage: rawMessage,
             done: false,
-            structured: false
+            structured: false,
+            classification_guess: null // No guess if not done
         };
     }
 

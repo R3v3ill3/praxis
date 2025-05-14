@@ -1,77 +1,63 @@
-// frontend/src/contexts/CampaignContext.jsx
-import React, { createContext, useState, useContext } from 'react';
-import { getFirestore, collection, getDocs, query, where } from 'firebase/firestore';
-import { getAuth } from 'firebase/auth';
+// frontend/contexts/CampaignContext.jsx
+
+import React, { createContext, useContext, useState } from 'react';
 
 const CampaignContext = createContext();
 
 export const useCampaign = () => useContext(CampaignContext);
 
 export const CampaignProvider = ({ children }) => {
-  const [campaigns, setCampaigns] = useState([]);
-  const [campaignData, setCampaignData] = useState({
-    summary: null,
-    classification: null,
-    plan: null,
-    messagingGuide: null,
-    name: '',
-  });
+  const [summary, setSummary] = useState(null);
+  const [classification, setClassification] = useState(null);
+  const [goals, setGoals] = useState([]);
 
-  const fetchCampaigns = async () => {
+  const updateSummary = (data) => {
+    setSummary(data);
+    console.log('✅ Summary updated:', data);
+  };
+
+  const updateClassification = (data) => {
+    setClassification(data);
+    console.log('✅ Classification updated:', data);
+  };
+
+  const updateGoals = (newGoals) => {
+    const ranked = newGoals.map((g, i) => ({ ...g, rank: i + 1 }));
+    setGoals(ranked);
+    console.log('✅ Goals updated:', ranked);
+  };
+
+  const saveCampaign = async () => {
     try {
-      const auth = getAuth();
-      const user = auth.currentUser;
-      if (!user) throw new Error('User not authenticated');
-
-      const db = getFirestore();
-      const campaignsRef = collection(db, 'campaigns');
-      const q = query(campaignsRef, where('ownerId', '==', user.uid));
-      const snapshot = await getDocs(q);
-
-      const fetched = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data(),
-      }));
-
-      setCampaigns(fetched);
-      console.log('📦 Campaigns fetched:', fetched);
-    } catch (error) {
-      console.error('❌ Error in fetchCampaigns:', error);
-      throw error;
+      const body = { summary, classification, goals };
+      const res = await fetch('/api/save-campaign', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      const result = await res.json();
+      console.log('✅ Campaign saved:', result);
+    } catch (err) {
+      console.error('❌ Error saving campaign:', err);
     }
   };
 
-  const updateCampaignData = (newData) => {
-    setCampaignData(prev => {
-      const updated = { ...prev, ...newData };
-      console.log('✅ Campaign Context Updated:', updated);
-      return updated;
-    });
-  };
-
-  const resetCampaignData = () => {
-    const reset = {
-      summary: null,
-      classification: null,
-      plan: null,
-      messagingGuide: null,
-      name: '',
-    };
-    setCampaignData(reset);
-    console.log('🔄 Campaign Context Reset');
-  };
-
-  const value = {
-    campaigns,
-    fetchCampaigns,
-    campaignData,
-    updateCampaignData,
-    resetCampaignData,
-  };
-
   return (
-    <CampaignContext.Provider value={value}>
+    <CampaignContext.Provider
+      value={{
+        summary,
+        classification,
+        goals,
+        updateSummary,
+        updateClassification,
+        updateGoals,
+        saveCampaign,
+      }}
+    >
       {children}
     </CampaignContext.Provider>
   );
 };
+
+// ✅ Add default export for compatibility with some import styles
+export default CampaignContext;

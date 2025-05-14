@@ -1,91 +1,62 @@
-
 import React, { createContext, useContext, useState } from 'react';
-import { getAuth } from 'firebase/auth';
 
 const CampaignContext = createContext();
 
 export const useCampaign = () => useContext(CampaignContext);
 
 export const CampaignProvider = ({ children }) => {
-  const [campaigns, setCampaigns] = useState([]);
-  const [campaignData, setCampaignData] = useState({
-    summary: null,
-    classification: null,
-    plan: null,
-    messagingGuide: null,
-    name: '',
-  });
+  const [summary, setSummary] = useState(null);
+  const [classification, setClassification] = useState(null);
+  const [goals, setGoals] = useState([]);
 
-  const fetchCampaigns = async () => {
-    const auth = getAuth();
-    const user = auth.currentUser;
+  const updateSummary = (data) => {
+    setSummary(data);
+    console.log('✅ Summary updated:', data);
+  };
 
-    // DEV fallback
-    if (!user) {
-      console.warn('⚠️ No user logged in, loading mock campaigns.');
-      const dummy = [
-        {
-          id: 'mock001',
-          name: 'Mock Campaign',
-          summary: { purpose: 'Test', audience: 'Developers', goals: ['issue awareness'] },
-          classification: { primary_type: 'Union', sub_type: 'Workplace' },
-        }
-      ];
-      setCampaigns(dummy);
-      return dummy;
-    }
+  const updateClassification = (data) => {
+    setClassification(data);
+    console.log('✅ Classification updated:', data);
+  };
 
+  const updateGoals = (newGoals) => {
+    const ranked = newGoals.map((g, i) => ({ ...g, rank: i + 1 }));
+    setGoals(ranked);
+    console.log('✅ Goals updated:', ranked);
+  };
+
+  const saveCampaign = async () => {
     try {
-      const token = await user.getIdToken();
-      const res = await fetch('/api/campaigns', {
-        headers: { Authorization: `Bearer ${token}` }
+      const body = { summary, classification, goals };
+      const res = await fetch('/api/save-campaign', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
       });
-
-      if (!res.ok) {
-        throw new Error(`Server responded with ${res.status}`);
-      }
-
-      const data = await res.json();
-      setCampaigns(data);
-      console.log('✅ Campaigns loaded:', data);
-      return data;
-    } catch (error) {
-      console.error('❌ Error loading campaigns:', error);
-      throw error;
+      const result = await res.json();
+      console.log('✅ Campaign saved:', result);
+    } catch (err) {
+      console.error('❌ Error saving campaign:', err);
     }
-  };
-
-  const updateCampaignData = (newData) => {
-    setCampaignData(prev => {
-      const updated = { ...prev, ...newData };
-      console.log('✅ Campaign Context Updated:', updated);
-      return updated;
-    });
-  };
-
-  const resetCampaignData = () => {
-    const reset = {
-      summary: null,
-      classification: null,
-      plan: null,
-      messagingGuide: null,
-      name: '',
-    };
-    setCampaignData(reset);
-    console.log('🔄 Campaign Context Reset');
-  };
-
-  const value = {
-    campaigns,
-    fetchCampaigns,
-    campaignData,
-    updateCampaignData,
-    resetCampaignData,
   };
 
   return (
-    <CampaignContext.Provider value={value}>
+    <CampaignContext.Provider
+      value={{
+        summary,
+        classification,
+        goals,
+        updateSummary,
+        updateClassification,
+        updateGoals,
+        saveCampaign,
+      }}
+    >
       {children}
     </CampaignContext.Provider>
   );
 };
+
+// 🔁 This supports both default and named imports
+export { CampaignContext };
+export default CampaignContext;

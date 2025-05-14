@@ -1,54 +1,58 @@
-
-import React, { Suspense, lazy } from 'react';
+// frontend/src/App.jsx
+import React from 'react';
 import { Routes, Route } from 'react-router-dom';
-import { ErrorBoundary } from 'react-error-boundary';
-
-// Fallback error display
-function ErrorFallback({ error }) {
-  return (
-    <div role="alert" className="p-4 bg-red-100 text-red-800 rounded">
-      <p><strong>⚠️ Something went wrong rendering this page:</strong></p>
-      <pre className="text-xs whitespace-pre-wrap">{error.message}</pre>
-    </div>
-  );
-}
-
-// Lazy-load key pages
-const LandingPage = lazy(() => import('./pages/LandingPage.jsx'));
-const Signup = lazy(() => import('./pages/Signup.jsx'));
-const Login = lazy(() => import('./pages/Login.jsx'));
-const Dashboard = lazy(() => import('./pages/Dashboard.jsx'));
-const OnboardingChat = lazy(() => import('./pages/OnboardingChat.jsx'));
-const OnboardingSummary = lazy(() => import('./pages/OnboardingSummary.jsx'));
-const CampaignBuilder = lazy(() => import('./pages/CampaignBuilder.jsx'));
-const CampaignNextSteps = lazy(() => import('./pages/CampaignNextSteps'));
-const EditCampaignClassification = lazy(() => import('./pages/EditCampaignClassification'));
-const MessagingAssistant = lazy(() => import('./pages/MessagingAssistant.jsx'));
-const MessagingForm = lazy(() => import('./pages/MessagingForm.jsx'));
-// Add other pages below as needed
-// const CampaignSummary = lazy(() => import('./pages/CampaignSummary.jsx'));
+import LandingPage from './pages/LandingPage';
+import Signup from './pages/Signup';
+import Login from './pages/Login';
+import OnboardingChat from './pages/OnboardingChat';
+import OnboardingSummary from './pages/OnboardingSummary';
+import Dashboard from './pages/Dashboard';
+// Use the MINIMAL CampaignBuilder for this test!
+import CampaignBuilder from './pages/CampaignBuilder';
+import CampaignPlan from './pages/CampaignPlan';
+import CampaignMessagingGuide from './pages/CampaignMessagingGuide';
+import CampaignReviewSave from './pages/CampaignReviewSave';
+import ContentGenerator from './pages/ContentGenerator';
 
 export default function App() {
+  // Log when App component itself renders
   console.log("--- Rendering App Component (Router Setup) ---");
+
   return (
-    <ErrorBoundary FallbackComponent={ErrorFallback}>
-      <Suspense fallback={<div className="p-4 text-gray-600">Loading…</div>}>
-        <Routes>
-          <Route path="/" element={<LandingPage />} />
-          <Route path="/signup" element={<Signup />} />
-          <Route path="/login" element={<Login />} />
-          <Route path="/dashboard" element={<Dashboard />} />
-          <Route path="/onboarding" element={<OnboardingChat />} />
-          <Route path="/onboarding/summary" element={<OnboardingSummary />} />
-          <Route path="/campaign-builder" element={<CampaignBuilder />} />
-          <Route path="/campaign/next-steps" element={<CampaignNextSteps />} />
-          <Route path="/campaign/classification-review/:campaignId" element={<EditCampaignClassification />} />
-          <Route path="/app/campaign/message" element={<MessagingAssistant />} />
-          <Route path="/app/campaign/message-form" element={<MessagingForm />} />
-          {/* Add additional routes here */}
-          {/* <Route path="/campaign-summary" element={<CampaignSummary />} /> */}
-        </Routes>
-      </Suspense>
-    </ErrorBoundary>
+    <> {/* Using Fragment to allow logging */}
+      {/* Log right before the Routes component */}
+      {console.log("--- App.jsx: Before <Routes> ---")}
+      <Routes>
+        {/* Public access */}
+        <Route path="/" element={<LandingPage />} />
+        <Route path="/signup" element={<Signup />} />
+        <Route path="/login" element={<Login />} />
+
+        {/* Onboarding */}
+        <Route path="/onboarding" element={<OnboardingChat />} />
+        <Route path="/onboarding/summary" element={<OnboardingSummary />} />
+
+        {/* Dashboard */}
+        <Route path="/dashboard" element={<Dashboard />} />
+
+        {/* Campaign creation flow */}
+        <Route
+          path="/app/campaign/new"
+          element={
+            // Log when this specific route element is being evaluated
+            <>
+              {console.log("--- App.jsx: Matched /app/campaign/new, evaluating element... ---")}
+              <CampaignBuilder /> {/* Still using the MINIMAL version */}
+            </>
+          }
+        />
+        <Route path="/app/campaign/plan" element={<CampaignPlan />} />
+        <Route path="/app/campaign/message" element={<CampaignMessagingGuide />} />
+        <Route path="/campaign/review" element={<CampaignReviewSave />} />
+        <Route path="/campaign/content" element={<ContentGenerator />} />
+      </Routes>
+      {/* Log right after the Routes component */}
+      {console.log("--- App.jsx: After <Routes> ---")}
+    </>
   );
 }
