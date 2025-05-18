@@ -1,121 +1,120 @@
-
-import React, { useState, useEffect } from 'react';
+// frontend/src/pages/CampaignNextSteps.jsx
+import React from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useCampaign } from '../contexts/CampaignContext';
-import { useAuth } from '../contexts/AuthContext';
-import { doc, updateDoc } from 'firebase/firestore';
-import { db } from '../firebase';
+import { useCampaign } from '../contexts/CampaignContext'; // Ensure this path is correct
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../components/ui/Card'; // Assuming shadcn/ui
+import { Button } from '../components/ui/Button';
 
-export default function CampaignNextSteps() {
-  const { campaignData } = useCampaign();
-  const { user } = useAuth();
+export default function CampaignNextStepsPage() { // Renamed component for clarity
+  // Use the campaign context to get the latest campaign data
+  // campaignId, summary, classification, goals should be populated from previous steps.
+  const { campaignId, summary, classification, goals } = useCampaign();
   const navigate = useNavigate();
 
-  const summary = campaignData?.summary || {};
-  const classification = campaignData?.classification || {};
+  console.log("CampaignNextStepsPage: Loaded. Context Data:", { campaignId, summary, classification, goals });
 
-  const [rankedGoals, setRankedGoals] = useState(summary.goals || []);
-  const [isSaving, setIsSaving] = useState(false);
-  const [saveSuccess, setSaveSuccess] = useState(false);
-
-  const handleReorder = (fromIndex, toIndex) => {
-    const updated = [...rankedGoals];
-    const [moved] = updated.splice(fromIndex, 1);
-    updated.splice(toIndex, 0, moved);
-    setRankedGoals(updated);
-  };
-
-  const saveRankedGoals = async () => {
-    if (!user?.uid || !campaignData?.campaignId) return;
-    setIsSaving(true);
-    try {
-      const campaignRef = doc(db, 'users', user.uid, 'campaigns', campaignData.campaignId);
-      await updateDoc(campaignRef, { ranked_goals: rankedGoals });
-      setSaveSuccess(true);
-    } catch (err) {
-      console.error('Error saving ranked goals:', err);
-    } finally {
-      setIsSaving(false);
-    }
-  };
+  if (!summary || !classification || !goals || !campaignId) {
+    // This can happen if the user navigates here directly without completing previous steps
+    // or if context state was somehow lost.
+    console.error("CampaignNextStepsPage: Essential campaign data (summary, classification, goals, or campaignId) is missing from context.");
+    return (
+      <div className="p-6 max-w-3xl mx-auto text-center">
+        <Card>
+          <CardHeader>
+            <CardTitle>Error: Campaign Data Missing</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="mb-4">
+              It looks like some essential campaign data is missing. Please ensure you've completed
+              the initial campaign setup steps.
+            </p>
+            <Button onClick={() => navigate('/app/campaign/new')}>Start New Campaign</Button>
+            {campaignId && <Button variant="outline" className="ml-2" onClick={() => navigate('/dashboard')}>Go to Dashboard</Button>}
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   const handleNavigate = (path) => {
+    // You might want to pass the campaignId as a URL param or ensure the next pages
+    // also pull it from context.
     navigate(path);
   };
 
+  // Ensure goals are displayed correctly (they should be an array of objects)
+  const displayGoals = goals.map(goal => goal.label || goal.id).join(', ');
+
   return (
-    <div className="p-6 max-w-3xl mx-auto bg-white shadow-md rounded">
-      <h2 className="text-2xl font-bold mb-4">Campaign Ready</h2>
-      <p className="mb-6">Here’s your campaign summary. What would you like to do next?</p>
+    <div className="p-4 md:p-6 max-w-3xl mx-auto space-y-6">
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-2xl md:text-3xl">Campaign Setup Complete!</CardTitle>
+          <CardDescription>Your initial campaign details have been saved. What's next?</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div>
+            <h3 className="text-lg font-semibold mb-1">Campaign ID:</h3>
+            <p className="text-sm text-gray-700 bg-gray-100 p-2 rounded">{campaignId}</p>
+          </div>
+          <div>
+            <h3 className="text-lg font-semibold mb-1">Summary:</h3>
+            <p className="text-sm text-gray-700"><strong>Purpose:</strong> {summary.purpose}</p>
+            <p className="text-sm text-gray-700"><strong>Audience:</strong> {summary.audience}</p>
+            <p className="text-sm text-gray-700"><strong>Target:</strong> {summary.target}</p>
+          </div>
+          <div>
+            <h3 className="text-lg font-semibold mb-1">Classification:</h3>
+            <p className="text-sm text-gray-700"><strong>Type:</strong> {classification.primary_type} - {classification.secondary_type} ({classification.sub_type || classification.use_case})</p>
+          </div>
+          <div>
+            <h3 className="text-lg font-semibold mb-1">Goals:</h3>
+            <p className="text-sm text-gray-700">{displayGoals}</p>
+          </div>
+        </CardContent>
+      </Card>
 
-      <div className="bg-gray-100 p-4 rounded mb-6">
-        <h3 className="text-lg font-bold mb-2">Campaign Summary</h3>
-        <ul className="text-sm space-y-1">
-          <li><strong>Purpose:</strong> {summary?.purpose}</li>
-          <li><strong>Audience:</strong> {summary?.audience}</li>
-          <li><strong>Target:</strong> {summary?.target}</li>
-          <li><strong>Intent:</strong> {summary?.intent}</li>
-          <li><strong>Location:</strong> {summary?.location}</li>
-          <li><strong>Goals:</strong>
-            <ol className="list-decimal ml-6">
-              {summary?.goals?.map((goal, i) => <li key={i}>{goal}</li>)}
-            </ol>
-          </li>
-        </ul>
-      </div>
-
-      <div className="bg-gray-50 p-4 rounded mb-6 text-sm">
-        <h4 className="font-semibold mb-2">Classification</h4>
-        <ul>
-          <li><strong>Type:</strong> {classification?.primary_type}</li>
-          <li><strong>Subtype:</strong> {classification?.secondary_type}</li>
-          <li><strong>Use Case:</strong> {classification?.sub_type}</li>
-          <li><strong>Confidence Score:</strong> {classification?.confidence}</li>
-        </ul>
-      </div>
-
-      {summary.goals && summary.goals.length > 0 && (
-        <div className="bg-white p-4 border rounded mb-6">
-          <h4 className="text-md font-semibold mb-2">Rank these goals by importance</h4>
-          <ul className="space-y-2">
-            {rankedGoals.map((goal, index) => (
-              <li key={index} className="bg-gray-100 p-2 rounded flex justify-between items-center">
-                <span>{index + 1}. {goal}</span>
-                <div className="space-x-1">
-                  {index > 0 && (
-                    <button className="text-sm px-2 py-1 bg-blue-100 rounded"
-                      onClick={() => handleReorder(index, index - 1)}>↑</button>
-                  )}
-                  {index < rankedGoals.length - 1 && (
-                    <button className="text-sm px-2 py-1 bg-blue-100 rounded"
-                      onClick={() => handleReorder(index, index + 1)}>↓</button>
-                  )}
-                </div>
-              </li>
-            ))}
-          </ul>
-          <button
-            className="mt-4 px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
-            onClick={saveRankedGoals}
-            disabled={isSaving}
+      <Card>
+        <CardHeader>
+          <CardTitle>Choose Your Next Step</CardTitle>
+        </CardHeader>
+        <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <Button 
+            onClick={() => handleNavigate('/app/campaign/develop-messaging')} // New route for step 1 of messaging
+            className="w-full text-lg py-3"
+            size="lg"
           >
-            {isSaving ? 'Saving…' : 'Save Ranking'}
-          </button>
-          {saveSuccess && <p className="text-green-600 mt-2">✅ Ranking saved</p>}
-        </div>
-      )}
-
-      <div className="space-y-2">
-        <button onClick={() => handleNavigate('/app/campaign/message')} className="block w-full px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700">
-          Build Campaign Messaging
-        </button>
-        <button onClick={() => handleNavigate('/campaign/plan')} className="block w-full px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700">
-          Build Action Plan
-        </button>
-        <button onClick={() => handleNavigate('/campaign/classification-review')} className="block w-full px-4 py-2 bg-gray-600 text-white rounded hover:bg-gray-700">
-          Review Campaign Details
-        </button>
-      </div>
+            Develop Messaging
+          </Button>
+          <Button 
+            onClick={() => handleNavigate('/app/campaign/develop-action-plan')} // Placeholder
+            className="w-full text-lg py-3"
+            variant="outline"
+            size="lg"
+            disabled 
+          >
+            Action Plan Development (Placeholder)
+          </Button>
+          <Button 
+            onClick={() => handleNavigate('/app/campaign/build-audience')} // Placeholder
+            className="w-full text-lg py-3"
+            variant="outline"
+            size="lg"
+            disabled
+          >
+            Build Audience (Placeholder)
+          </Button>
+          <Button 
+            onClick={() => handleNavigate('/app/campaign/generate-summary-doc')} // Placeholder
+            className="w-full text-lg py-3"
+            variant="outline"
+            size="lg"
+            disabled
+          >
+            Generate Summary Doc (Placeholder)
+          </Button>
+        </CardContent>
+      </Card>
     </div>
   );
 }

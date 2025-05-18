@@ -1,0 +1,74 @@
+// frontend/src/pages/MessagingDevelopmentChatPage.jsx
+import React from 'react';
+import { useCampaign } from '../contexts/CampaignContext';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../components/ui/Card'; // Assuming shadcn/ui
+import { Button } from '../components/ui/Button';
+import { useNavigate } from 'react-router-dom';
+
+const MessagingDevelopmentChatPage = () => {
+  const { campaignId, summary, goals, messagingInputs, initialMessagingInputs, updateMessagingInputs } = useCampaign();
+  const navigate = useNavigate();
+
+  // Initialize messagingInputs from context or with initial structure if null
+  React.useEffect(() => {
+    if (!messagingInputs && campaignId) { // Only initialize if not already set and campaign exists
+      console.log("MessagingDevelopmentChatPage: Initializing messagingInputs in context.");
+      const initialData = { ...initialMessagingInputs };
+      // Pre-fill from existing campaign data if available
+      if (summary) {
+        initialData.issueName = summary.purpose || '';
+        initialData.primaryAudience = summary.audience || '';
+        // You might want to map campaign goals to 'desiredOutcome' or 'campaignObjective' here
+        // For example, concatenate ranked goals:
+        if (goals && goals.length > 0) {
+          initialData.desiredOutcome = goals.sort((a,b) => a.rank - b.rank).map(g => g.label).join('; ');
+        }
+      }
+      updateMessagingInputs(initialData);
+    }
+  }, [campaignId, summary, goals, messagingInputs, initialMessagingInputs, updateMessagingInputs]);
+
+  if (!campaignId) {
+    return (
+      <div className="p-6 max-w-xl mx-auto text-center">
+        <Card>
+          <CardHeader><CardTitle>Error</CardTitle></CardHeader>
+          <CardContent>
+            <p>No active campaign found. Please start a new campaign.</p>
+            <Button onClick={() => navigate('/app/campaign/new')} className="mt-4">Start New Campaign</Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  return (
+    <div className="p-4 md:p-6 max-w-2xl mx-auto">
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-2xl">Develop Messaging (AI Chat)</CardTitle>
+          <CardDescription>
+            Let's work together to gather the key information for your messaging guide.
+            Campaign ID: {campaignId}
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <p className="mb-4">Chat interface will go here.</p>
+          <p className="mb-2 text-sm font-medium">Current Messaging Inputs (from Context):</p>
+          <pre className="text-xs bg-gray-100 p-3 rounded overflow-x-auto">
+            {JSON.stringify(messagingInputs || initialMessagingInputs, null, 2)}
+          </pre>
+          {/* Button to simulate going to next step (generating the guide) */}
+          <Button 
+            className="mt-4"
+            onClick={() => navigate('/app/campaign/message')} // Assuming this is where the generated guide is viewed
+          >
+            Simulate: Go to View Generated Guide (Step 2)
+          </Button>
+        </CardContent>
+      </Card>
+    </div>
+  );
+};
+
+export default MessagingDevelopmentChatPage;

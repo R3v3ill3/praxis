@@ -1,0 +1,83 @@
+// frontend/src/App.jsx
+import React from 'react';
+import { Routes, Route, Navigate } from 'react-router-dom';
+import { useAuth } from './contexts/AuthContext'; // Assuming path is correct
+
+// Common Pages
+import LandingPage from './pages/LandingPage';
+import Signup from './pages/Signup';
+import Login from './pages/Login';
+import Dashboard from './pages/Dashboard';
+
+// Campaign Creation Flow Pages
+import CampaignBuilder from './pages/CampaignBuilder';
+import {
+  EditClassificationPage,
+  ConfirmGoalsPage,
+  RankGoalsPage
+} from './pages/CampaignStepRoutes'; // This named import should now work
+import CampaignNextStepsPage from './pages/CampaignNextSteps'; 
+
+// Other Campaign Related Pages
+import CampaignPlan from './pages/CampaignPlan';
+import CampaignMessagingGuide from './pages/CampaignMessagingGuide'; // This is for viewing the *generated* guide
+import CampaignReviewSave from './pages/CampaignReviewSave';
+import ContentGenerator from './pages/ContentGenerator';
+import MessagingDevelopmentChatPage from './pages/MessagingDevelopmentChatPage'; // Import the new page
+
+
+// Simple ProtectedRoute component
+const ProtectedRoute = ({ children }) => {
+  const { user, loading } = useAuth(); // Make sure useAuth() is correctly providing these
+  if (loading) {
+    return <div>Loading authentication state...</div>; // Or a spinner component
+  }
+  if (!user) {
+    console.log("ProtectedRoute: User not authenticated, redirecting to login.");
+    return <Navigate to="/login" replace />;
+  }
+  return children;
+};
+
+export default function App() {
+  console.log("--- Rendering App Component (Router Setup) ---");
+  return (
+    <>
+      {console.log("--- App.jsx: Before <Routes> ---")}
+      <Routes>
+        {/* Public Routes */}
+        <Route path="/" element={<LandingPage />} />
+        <Route path="/signup" element={<Signup />} />
+        <Route path="/login" element={<Login />} />
+
+        {/* Protected Routes */}
+        <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
+        
+        <Route path="/app/campaign/new" element={<ProtectedRoute><CampaignBuilder /></ProtectedRoute>} />
+        <Route path="/app/campaign/edit-classification" element={<ProtectedRoute><EditClassificationPage /></ProtectedRoute>} />
+        <Route path="/app/campaign/confirm-goals" element={<ProtectedRoute><ConfirmGoalsPage /></ProtectedRoute>} />
+        <Route path="/app/campaign/rank-goals" element={<ProtectedRoute><RankGoalsPage /></ProtectedRoute>} />
+        
+        <Route path="/app/campaign/next-steps-summary" element={<ProtectedRoute><CampaignNextStepsPage /></ProtectedRoute>} />
+        
+        {/* Messaging Development Flow */}
+        <Route path="/app/campaign/develop-messaging" element={<ProtectedRoute><MessagingDevelopmentChatPage /></ProtectedRoute>} /> {/* ADDED THIS ROUTE */}
+        
+        <Route path="/app/campaign/plan" element={<ProtectedRoute><CampaignPlan /></ProtectedRoute>} />
+        {/* This route is likely for VIEWING the generated guide, not the chat part */}
+        <Route path="/app/campaign/message" element={<ProtectedRoute><CampaignMessagingGuide /></ProtectedRoute>} /> 
+        
+        <Route path="/campaign/review" element={<ProtectedRoute><CampaignReviewSave /></ProtectedRoute>} /> 
+        <Route path="/campaign/content" element={<ProtectedRoute><ContentGenerator /></ProtectedRoute>} />
+
+        <Route path="*" element={
+          <div>
+            <h2>404 - Page Not Found</h2>
+            <p>The page you are looking for does not exist.</p>
+          </div>
+        } />
+      </Routes>
+      {console.log("--- App.jsx: After <Routes> ---")}
+    </>
+  );
+}

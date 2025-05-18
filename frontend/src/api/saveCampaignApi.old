@@ -1,0 +1,22 @@
+// /frontend/src/api/saveCampaignProgress.js
+
+export async function saveCampaignProgress(campaignId, data, userId) {
+  try {
+    const response = await fetch('/api/save-campaign', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        campaignId,
+        ...data,
+        userId,
+      }),
+    });
+    if (!response.ok) throw new Error('Failed to save');
+    return await response.json();
+  } catch (e) {
+    console.error("Error saving campaign:", e);
+    throw e;
+  }
+}

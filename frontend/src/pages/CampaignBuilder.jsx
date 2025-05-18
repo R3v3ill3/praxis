@@ -1,4 +1,4 @@
-// frontend/src/pages/CampaignBuilder.jsx (Corrected for data passing)
+// frontend/src/pages/CampaignBuilder.jsx
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Textarea } from '../components/ui/Textarea.jsx';
@@ -6,7 +6,8 @@ import { Button } from '../components/ui/Button.jsx';
 import { useToast } from '../components/ui/use-toast.jsx';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/Card.jsx';
 import { useCampaign } from '../contexts/CampaignContext';
-import { classifyCampaign } from '../api/classify.js'; // Ensure this path is correct
+import { classifyCampaign } from '../api/classify.js';
+import { sendQuery } from '../api/assistant.js';
 
 export default function CampaignBuilder() {
   const [input, setInput] = useState('');
@@ -15,13 +16,13 @@ export default function CampaignBuilder() {
   const [error, setError] = useState(null);
   const navigate = useNavigate();
   const { toast } = useToast();
-  const { updateCampaignData, resetCampaignData } = useCampaign();
+  const { updateCampaignData, resetCampaignData, saveCurrentCampaignState, campaignId: contextCampaignId } = useCampaign();
   const chatBoxRef = useRef(null);
 
   useEffect(() => {
-    console.log("CampaignBuilder Effect: Resetting campaign data.");
+    console.log("CampaignBuilder: Mounting and resetting campaign data.");
     resetCampaignData();
-  }, []);
+  }, [resetCampaignData]);
 
   useEffect(() => {
     if (chatBoxRef.current) {
@@ -30,103 +31,152 @@ export default function CampaignBuilder() {
   }, [history]);
 
   const sendMessage = async () => {
-    console.log("sendMessage: Called.");
     if (!input.trim()) return;
 
     const userMessage = { role: 'user', content: input };
-    const newHistory = [...history, userMessage];
-    setHistory(newHistory);
+    const currentInput = input;
+    const historyForApi = [...history];
+    setHistory(prevHistory => [...prevHistory, userMessage]);
     setInput('');
     setLoading(true);
     setError(null);
-    console.log("sendMessage: Calling API /api/campaign-assistant");
 
     try {
-      const assistantResponse = await fetch('/api/campaign-assistant', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ input: userMessage.content, history: newHistory }),
-      });
+      const assistantData = await sendQuery(currentInput, historyForApi);
 
-      console.log("sendMessage (Assistant): API Response Status:", assistantResponse.status);
-      if (!assistantResponse.ok) {
-          const errorData = await assistantResponse.json().catch(() => ({ message: "Failed to parse assistant error response" }));
-          console.error("sendMessage (Assistant): API Error Response Data:", errorData);
-          throw new Error(errorData.message || `Assistant API request failed with status ${assistantResponse.status}`);
+      if (!assistantData) {
+        toast({ variant: "destructive", title: "Error", description: "AI assistant returned no data or failed." });
+        throw new Error("AI assistant returned no data or failed.");
       }
+      console.log("CampaignBuilder sendMessage: Assistant API Response Data:", assistantData);
 
-      const assistantData = await assistantResponse.json();
-      console.log("sendMessage (Assistant): API Response Data:", assistantData);
-
-      // VVV CORRECTED DESTRUCTURING AND USAGE VVV
       const {
         aiMessage,
         done,
-        structured: overallStructured, // Top-level 'structured' flag from assistant's response
-        classification_guess,         // The AI's classification guess object
-        summary: assistantSummaryObject // This IS the actual summary object {purpose, audience, ..., goals, structured (inner from parser)}
+        structured: overallStructured,
+        classification_guess,
+        summary: assistantSummaryObject,
+        processed_goals
       } = assistantData;
 
       if (aiMessage) {
-          setHistory((prev) => [...prev, { role: 'assistant', content: aiMessage }]);
-      } else {
-          console.warn("sendMessage (Assistant): Received response but no aiMessage content.");
+        setHistory((prevHistory) => [...prevHistory, { role: 'assistant', content: aiMessage }]);
       }
 
-      if (done && overallStructured) { // Use the top-level 'overallStructured'
-        console.log("sendMessage: Assistant Done & Overall Structured. Proceeding with workflow.");
+      if (done && overallStructured && assistantSummaryObject) {
+        console.log("CampaignBuilder: Assistant Done & Overall Structured.");
 
-        // assistantSummaryObject IS the inner summary: { purpose, audience, ..., goals, structured (inner one from parser) }
-        // classification_guess is the AI's guess: { primary_type, secondary_type, use_case } or null
+        const newSummary = assistantSummaryObject;
+        const newClassificationGuess = classification_guess;
+        const newGoals = processed_goals || [];
 
-        // YOUR ADDED LOG - to see what's being sent to the helper
-        console.log("CampaignBuilder: Object being sent to classifyCampaign helper (this is assistantSummaryObject):", JSON.stringify(assistantSummaryObject, null, 2));
+        updateCampaignData({
+          summary: newSummary,
+          classification_guess: newClassificationGuess,
+          goals: newGoals
+        });
 
-        console.log("sendMessage: Updating context with summary:", assistantSummaryObject, "and AI's guess:", classification_guess);
-        updateCampaignData({ summary: assistantSummaryObject, classification_guess: classification_guess });
-
-        console.log("sendMessage: Calling classifyCampaign API with (this is assistantSummaryObject):", assistantSummaryObject);
-        const programmaticClassificationResult = await classifyCampaign(assistantSummaryObject); // Pass only the core summary object
-        console.log("sendMessage: Programmatic classification result received:", programmaticClassificationResult);
-
-        if (programmaticClassificationResult) {
-            console.log("sendMessage: Updating context with programmatic classification:", programmaticClassificationResult);
-            updateCampaignData({ classification: programmaticClassificationResult });
-        } else if (classification_guess) {
-             console.log("sendMessage: Programmatic classification failed or null. AI guess was:", classification_guess, ". Consider if this guess should be used in context if no programmatic result.");
-             // Optionally: updateCampaignData({ classification: some_transformed_version_of_classification_guess });
+        let finalClassificationForContext = null;
+        if (newClassificationGuess && newClassificationGuess.primary_type) {
+          finalClassificationForContext = {
+            primary_type: newClassificationGuess.primary_type,
+            secondary_type: newClassificationGuess.secondary_type,
+            sub_type: newClassificationGuess.use_case,
+            id: null, type_id: null, subtype_id: null,
+            source: 'ai_guess'
+          };
         } else {
-            console.warn("sendMessage: No AI guess and programmatic classification failed/null.");
-            // An error would have been thrown by classifyCampaign if the API call failed badly.
-            // If classifyCampaign resolved to null/undefined (meaning backend said no match), handle here.
-            toast({
-                variant: "default", // Or 'warning' if you have one
-                title: "Campaign Classification",
-                description: "Could not programmatically classify the campaign based on summary. Please review manually.",
-            });
+          try {
+            const cleanedSummaryForProgrammatic = {
+              ...newSummary,
+              goals: newSummary.goals?.map(g => {
+                const match = g.match(/^(.*?)\s*→ Goal Type:/);
+                return match ? match[1].trim() : g.trim();
+              }).filter(g => g) || []
+            };
+            const programmaticResult = await classifyCampaign(cleanedSummaryForProgrammatic);
+            if (programmaticResult) {
+              finalClassificationForContext = { ...programmaticResult, source: 'programmatic' };
+            } else {
+              toast({ title: "Classification Note", description: "Could not programmatically classify campaign. No AI guess provided.", duration: 4000 });
+            }
+          } catch (classificationError) {
+            console.error("CampaignBuilder: Programmatic classification error -", classificationError);
+            toast({ variant: "destructive", title: "Classification Error", description: classificationError.message });
+          }
         }
 
-        console.log("sendMessage: Navigating to /campaign/review");
-        navigate('/campaign/review');
+        if (finalClassificationForContext) {
+          updateCampaignData({ classification: finalClassificationForContext });
+          console.log("CampaignBuilder: Updated context with final classification:", finalClassificationForContext);
+        } else {
+          updateCampaignData({ classification: null });
+          console.log("CampaignBuilder: No final classification determined for context. Setting classification to null.");
+          // Consider a toast if no classification could be made at all
+           toast({ title: "Classification", description: "No campaign classification could be determined. Please review manually in the next step.", duration: 5000 });
+        }
+                        
+        console.log("CampaignBuilder: PRE-SAVE CHECK for 'Campaign Classification Complete'");
+        console.log("CampaignBuilder: Data for override: newSummary:", newSummary);
+        console.log("CampaignBuilder: Data for override: finalClassificationForContext:", finalClassificationForContext);
+        console.log("CampaignBuilder: Data for override: newGoals:", newGoals);
+        console.log("CampaignBuilder: Data for override: contextCampaignId (should be null):", contextCampaignId);
 
-      } else if (done && !overallStructured) {
-         console.warn("sendMessage: Done, but summary structure parsing failed by assistant. Staying on page.");
-         setError("Assistant finished, but the summary format was not understood. Please try rephrasing or review the chat.");
-         setLoading(false);
-      } else {
-         // Not done yet
-         setLoading(false);
+        // Check if essential data for saving is present
+        // Note: finalClassificationForContext can be null if no classification was made, 
+        // but the save payload structure expects a classification object.
+        // If finalClassificationForContext is null, we should probably send a default/empty classification object
+        // or the backend save-campaign.js needs to handle a null classification.
+        // For now, let's ensure finalClassificationForContext is at least an object for the payload.
+        const classificationToSave = finalClassificationForContext || { 
+            primary_type: 'Unknown', secondary_type: 'Unknown', sub_type: 'Unknown', 
+            id: null, type_id: null, subtype_id: null, source: 'unavailable' 
+        };
+
+        if (newSummary && newGoals.length > 0) { // classificationToSave will always be an object now
+          const dataToSave = {
+            summary: newSummary,
+            classification: classificationToSave,
+            goals: newGoals,
+            campaignId: contextCampaignId || null
+          };
+          console.log("CampaignBuilder: Attempting initial save with direct data override:", dataToSave);
+          
+          const savedId = await saveCurrentCampaignState(
+            "Campaign Classification Complete",
+            dataToSave
+          );
+
+          if (!savedId) {
+            console.warn("CampaignBuilder: Initial save FAILED or was skipped by context save function.");
+            toast({
+                variant: "destructive",
+                title: "Save Failed",
+                description: "Failed to save initial campaign details. Please try again.",
+                duration: 5000,
+            });
+          }
+        } else {
+          console.warn("CampaignBuilder: Skipping initial save due to incomplete summary or goals.", { newSummary, finalClassificationForContext, newGoals });
+          toast({ variant: "destructive", title: "Save Skipped", description: "Initial campaign data (summary/goals) incomplete. Progress not saved." });
+        }
+        
+        navigate('/app/campaign/edit-classification');
+
+      } else if (done && (!overallStructured || !assistantSummaryObject)) {
+         setError("Assistant finished, but the summary was incomplete or not understood.");
+         updateCampaignData({
+            summary: assistantSummaryObject || null,
+            classification_guess: classification_guess || null,
+            goals: processed_goals || [],
+            classification: null
+         });
       }
-      // ^^^ END CORRECTED DESTRUCTURING AND USAGE ^^^
-
     } catch (err) {
-      console.error('❌ Error in sendMessage or Classification step:', err);
-      toast({
-        variant: 'destructive',
-        title: 'Error',
-        description: err.message || 'An unexpected error occurred.',
-      });
+      console.error('❌ Error in sendMessage (CampaignBuilder):', err);
+      toast({ variant: 'destructive', title: 'Error', description: err.message || 'AI assistant interaction failed.' });
       setError(err.message || 'An unexpected error occurred.');
+    } finally {
       setLoading(false);
     }
   };
@@ -150,7 +200,7 @@ export default function CampaignBuilder() {
               ref={chatBoxRef}
               className="min-h-[200px] max-h-[400px] overflow-y-auto border rounded p-4 bg-gray-50 flex flex-col gap-2"
             >
-              {history.length === 0 && (
+              {history.length === 0 && !loading && (
                 <p className="text-muted-foreground">Start by describing what you’re working on…</p>
               )}
               {history.map((msg, idx) => (
@@ -162,12 +212,19 @@ export default function CampaignBuilder() {
                       : 'bg-gray-200 text-gray-800 self-start mr-auto'
                   }`}
                 >
-                  <strong>{msg.role === 'user' ? 'You' : 'Assistant'}:</strong> {msg.content ?? '*Missing message content*'}
+                  <strong>{msg.role === 'user' ? 'You' : 'Assistant'}:</strong> {msg.content ?? '*Missing content*'}
                 </div>
               ))}
-               {loading && <p className="text-muted-foreground self-start mr-auto px-4 py-2">Processing... (includes classification)</p>}
+               {loading && (
+                <div className="self-start mr-auto px-4 py-2">
+                    <p className="text-muted-foreground">Assistant is thinking...</p>
+                </div>
+               )}
             </div>
+            <label htmlFor="campaign-input" className="sr-only">Describe your campaign</label>
             <Textarea
+              id="campaign-input"
+              name="campaign_input"
               placeholder="Type your message and hit Enter…"
               value={input}
               onChange={(e) => setInput(e.target.value)}

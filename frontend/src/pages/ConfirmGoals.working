@@ -1,0 +1,115 @@
+// frontend/components/ConfirmGoals.jsx // Or frontend/src/pages/ConfirmGoals.jsx
+
+import React, { useState, useEffect } from 'react'; // Added useEffect
+import { canonicalGoalsList } from '../api/canonicalGoalsList'; // Assuming this path is correct
+
+function ConfirmGoals({ initialGoals = [], onConfirm }) {
+  // Initialize local 'goals' state based on initialGoals from context.
+  // Ensure that initialGoals are in the format {id, label, rank}
+  const [goals, setGoals] = useState([]);
+
+  useEffect(() => {
+    // When initialGoals from context changes (e.g., after AI processing), update local state.
+    // This ensures the component reflects the goals derived by the AI.
+    // We still limit to 4 and ensure they have a rank for local management.
+    const mappedInitialGoals = (initialGoals || [])
+      .map((g, index) => ({
+        id: g.id,
+        label: g.label || g.id.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()), // Ensure label exists
+        rank: g.rank || index + 1 // Ensure rank exists
+      }))
+      .slice(0, 4);
+    setGoals(mappedInitialGoals);
+  }, [initialGoals]);
+
+  const addGoal = (goalToAdd) => {
+    // Check if goal is already added or if limit is reached
+    if (goals.length >= 4 || goals.find(g => g.id === goalToAdd.id)) return;
+    // Add the new goal with the next rank
+    setGoals([...goals, { ...goalToAdd, rank: goals.length + 1 }]);
+  };
+
+  const removeGoal = (idToRemove) => {
+    // Filter out the goal and then re-rank the remaining ones
+    const updatedGoals = goals
+      .filter(g => g.id !== idToRemove)
+      .map((g, index) => ({ ...g, rank: index + 1 }));
+    setGoals(updatedGoals);
+  };
+
+  const handleSelectChange = (e) => {
+    const selectedId = e.target.value;
+    if (selectedId) {
+      const goalFromList = canonicalGoalsList.find(g => g.id === selectedId);
+      if (goalFromList) {
+        addGoal(goalFromList); // addGoal will handle duplicates and limit
+      }
+    }
+  };
+
+  return (
+    <div className="max-w-lg mx-auto p-6 bg-white rounded-lg shadow-md space-y-6">
+      <h2 className="text-xl font-semibold text-gray-800 text-center">Confirm Your Campaign Goals</h2>
+      <p className="text-sm text-gray-600 text-center">
+        Based on your campaign description, we've identified some potential goals. You can confirm these or select up to 4 goals.
+      </p>
+
+      {goals.length > 0 ? (
+        <ul className="space-y-3">
+          {goals.map((goal) => (
+            <li key={goal.id} className="flex items-center justify-between p-3 border border-gray-200 rounded-md bg-gray-50 shadow-sm">
+              <span className="text-gray-700">{goal.label}</span>
+              <button
+                type="button"
+                onClick={() => removeGoal(goal.id)}
+                className="px-3 py-1 text-xs font-medium bg-red-100 text-red-600 rounded-md hover:bg-red-200 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-1"
+              >
+                Remove
+              </button>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="text-center text-gray-500 py-4">No goals selected yet. Please add goals using the dropdown below.</p>
+      )}
+
+
+      {goals.length < 4 && (
+        <div className="pt-2">
+          <label htmlFor="add-goal-select" className="block text-sm font-medium text-gray-700 mb-1">
+            Add another goal (up to {4 - goals.length} more):
+          </label>
+          <select
+            id="add-goal-select" // Accessibility: Add id
+            name="add_goal_select" // Accessibility: Add name
+            onChange={handleSelectChange}
+            value="" // Controlled component: value should be empty to allow placeholder selection
+            className="mt-1 block w-full p-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+          >
+            <option value="" disabled>Select a goal...</option>
+            {canonicalGoalsList
+              .filter(canonicalGoal => !goals.some(selectedGoal => selectedGoal.id === canonicalGoal.id))
+              .map(canonicalGoal => (
+                <option key={canonicalGoal.id} value={canonicalGoal.id}>
+                  {canonicalGoal.label}
+                </option>
+              ))}
+          </select>
+        </div>
+      )}
+
+      <div className="pt-6">
+        <button
+          type="button"
+          onClick={() => onConfirm(goals)} // Pass the current local state 'goals'
+          disabled={goals.length === 0}
+          className="w-full px-4 py-2.5 bg-blue-600 text-white font-semibold rounded-md shadow-sm hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-60 disabled:cursor-not-allowed"
+        >
+          Confirm Goals and Continue
+        </button>
+      </div>
+    </div>
+  );
+}
+
+export default ConfirmGoals;

@@ -1,0 +1,331 @@
+// frontend/src/pages/CampaignStepRoutes.jsx
+import React, { useContext, useEffect, useCallback } from 'react'; // Added useEffect, useCallback
+import { useNavigate } from 'react-router-dom';
+import CampaignContext from '../contexts/CampaignContext';
+import EditCampaignClassificationComponent from './EditCampaignClassification';
+import ConfirmGoalsComponent from './ConfirmGoals';
+import GoalRankingComponent from './GoalRanking';
+import { useToast } from '../components/ui/use-toast';
+
+// Helper to check if core context functions are available
+const checkContextFunctions = (ctx, functionsNeeded = []) => {
+    if (!ctx) {
+        console.error("Context check failed: Context itself is null/undefined.");
+        return false;
+    }
+    for (const funcName of functionsNeeded) {
+        if (typeof ctx[funcName] !== 'function') {
+            console.error(`Context Error: Function '${funcName}' is missing or not a function in CampaignContext.`);
+            return false;
+        }
+    }
+    return true;
+};
+
+export function EditClassificationPage() {
+  const navigate = useNavigate(); // Top-level hook call
+  const { toast } = useToast();    // Top-level hook call
+  
+  // Top-level hook call for context
+  const campaignCtx = useContext(CampaignContext); 
+  console.log("EditClassificationPage: Render cycle. Raw CampaignContext:", campaignCtx);
+
+  // Effect for logging context changes relevant to this component
+  useEffect(() => {
+    if (campaignCtx) {
+      console.log("EditClassificationPage Mounted/Ctx Updated - Context State:", { 
+        summary: campaignCtx.summary, 
+        classification: campaignCtx.classification, 
+        classificationGuess: campaignCtx.classificationGuess, 
+        campaignId: campaignCtx.campaignId, 
+        contextGoalsLength: campaignCtx.goals?.length 
+      });
+      if (!campaignCtx.summary) {
+        console.warn("EditClassificationPage: Context 'summary' is null/undefined on mount/update.");
+        // No toast here to avoid spamming if it's an ongoing issue, focus on console
+      }
+    } else {
+        console.error("EditClassificationPage Mounted/Ctx Updated: CampaignContext is NULL!");
+    }
+  }, [campaignCtx]); // Re-run if the campaignCtx object reference changes
+
+
+  // Destructure AFTER checking campaignCtx, ensure this happens only once per render at top level
+  if (!campaignCtx) {
+    console.error("EditClassificationPage: CampaignContext is not available during render setup!");
+    // Returning null or an error message if context is not available.
+    // This might happen if CampaignProvider is not correctly set up above this route.
+    return <p>Error: Campaign context is critically unavailable. Please ensure the application is set up correctly.</p>;
+  }
+
+  const {
+    summary,
+    classification,
+    classificationGuess,
+    updateClassification,
+    saveCurrentCampaignState,
+    campaignId,
+    goals: contextGoals
+  } = campaignCtx;
+
+  // useCallback for handleNext to ensure its stability if passed down or used in effects,
+  // and to correctly capture the necessary context values from the render it was created in.
+  const handleNext = useCallback(async (updatedClassificationFromForm) => {
+    console.log("EditClassificationPage: handleNext triggered.");
+    console.log("EditClassificationPage handleNext: updatedClassificationFromForm:", updatedClassificationFromForm);
+    console.log("EditClassificationPage handleNext: Context values at call time - summary:", summary, "goals:", contextGoals, "campaignId:", campaignId);
+
+    if (!checkContextFunctions(campaignCtx, ['updateClassification', 'saveCurrentCampaignState'])) {
+        toast({ variant: "destructive", title: "Context Error", description: "Critical context functions are missing." });
+        return;
+    }
+
+    // 1. Update context state for classification
+    // This function (updateClassification) is from context and should be stable due to useCallback in CampaignContext
+    updateClassification(updatedClassificationFromForm);
+
+    // 2. Prepare data for saving
+    // It's crucial that 'summary' and 'contextGoals' are correctly populated in the context
+    // from previous steps by the time this page/component is used.
+    if (!summary || !contextGoals) {
+        console.error("EditClassificationPage handleNext: Critical data (summary or goals) missing from context for save.", { summary, contextGoals });
+        toast({ variant: "destructive", title: "Save Error", description: "Missing campaign summary or goals. Cannot save." });
+        return;
+    }
+
+    const dataToSave = {
+        summary: summary,
+        classification: updatedClassificationFromForm, // The newly confirmed classification
+        goals: contextGoals, // Goals from context (should be from CampaignBuilder step)
+        campaignId: campaignId // campaignId from context (should be set after first save)
+    };
+    console.log("EditClassificationPage handleNext: Data being passed to saveCurrentCampaignState:", dataToSave);
+
+    // 3. Call save
+    const savedId = await saveCurrentCampaignState("Edit Classification Confirmed", dataToSave);
+
+    if (!savedId) {
+      toast({
+        variant: "destructive",
+        title: "Save Failed",
+        description: "Could not save classification changes. Please try again.",
+      });
+      // Do not navigate if save failed
+      return; 
+    }
+
+    // 4. Navigate on successful save
+    console.log("EditClassificationPage handleNext: Save successful, navigating to confirm-goals.");
+    navigate('/app/campaign/confirm-goals');
+  }, [
+    campaignCtx, // Main context object
+    summary, 
+    updateClassification, 
+    saveCurrentCampaignState, 
+    campaignId, 
+    contextGoals, 
+    navigate, 
+    toast
+  ]); // Dependencies for useCallback
+
+  const classificationForEditor = classification || classificationGuess || null;
+  
+  if (!summary && !classificationForEditor && !classificationGuess) {
+      console.warn("EditClassificationPage: No summary or initial classification data available to display. User might have jumped to URL directly.");
+      // Optional: Redirect or show placeholder if essential initial data is missing
+      // For now, we let EditCampaignClassificationComponent handle null props if it can.
+  }
+
+  return <EditCampaignClassificationComponent
+           initialSummary={summary}
+           initialClassification={classificationForEditor}
+           onNext={handleNext} // Pass the memoized handleNext
+         />;
+}
+
+// --- ConfirmGoalsPage (Structure similar to EditClassificationPage for context handling) ---
+export function ConfirmGoalsPage() {
+  const navigate = useNavigate();
+  const { toast } = useToast();
+  const campaignCtx = useContext(CampaignContext);
+  console.log("ConfirmGoalsPage: Render cycle. Raw CampaignContext:", campaignCtx);
+
+
+  useEffect(() => {
+    if(campaignCtx) {
+        console.log("ConfirmGoalsPage Mounted/Ctx Updated - Context State:", { 
+            summary: campaignCtx.summary, 
+            classification: campaignCtx.classification, 
+            goalsLength: campaignCtx.goals?.length, 
+            campaignId: campaignCtx.campaignId 
+        });
+        if (!campaignCtx.summary || !campaignCtx.classification) {
+          console.warn("ConfirmGoalsPage: Context 'summary' or 'classification' is null/undefined on mount/update.");
+        }
+    } else {
+        console.error("ConfirmGoalsPage Mounted/Ctx Updated: CampaignContext is NULL!");
+    }
+  }, [campaignCtx]);
+
+  if (!campaignCtx) {
+    console.error("ConfirmGoalsPage: CampaignContext is not available during render setup!");
+    return <p>Error: Campaign context is critically unavailable.</p>;
+  }
+  const {
+    summary,
+    classification,
+    goals: contextGoalsFromCtx,
+    updateGoals,
+    saveCurrentCampaignState,
+    campaignId
+  } = campaignCtx;
+
+  const handleConfirm = useCallback(async (confirmedGoalsFromForm) => {
+    console.log("ConfirmGoalsPage: handleConfirm triggered.");
+    console.log("ConfirmGoalsPage handleConfirm: confirmedGoalsFromForm:", confirmedGoalsFromForm);
+    console.log("ConfirmGoalsPage handleConfirm: Context values at call time - summary:", summary, "classification:", classification, "campaignId:", campaignId);
+
+
+    if (!checkContextFunctions(campaignCtx, ['updateGoals', 'saveCurrentCampaignState'])) {
+        toast({ variant: "destructive", title: "Context Error", description: "Critical context functions are missing." });
+        return;
+    }
+    updateGoals(confirmedGoalsFromForm);
+
+    if (!summary || !classification) {
+        console.error("ConfirmGoalsPage handleConfirm: Critical data (summary or classification) missing from context for save.", { summary, classification });
+        toast({ variant: "destructive", title: "Save Error", description: "Missing summary or classification. Cannot save." });
+        return;
+    }
+
+    const dataToSave = {
+        summary: summary,
+        classification: classification,
+        goals: confirmedGoalsFromForm,
+        campaignId: campaignId
+    };
+    console.log("ConfirmGoalsPage handleConfirm: Data being passed to saveCurrentCampaignState:", dataToSave);
+
+    const savedId = await saveCurrentCampaignState("Goal Selection Confirmed", dataToSave);
+
+    if (!savedId) {
+      toast({
+        variant: "destructive",
+        title: "Save Failed",
+        description: "Could not save goal selection. Please try again.",
+      });
+      return;
+    }
+    console.log("ConfirmGoalsPage handleConfirm: Save successful, navigating to rank-goals.");
+    navigate('/app/campaign/rank-goals');
+  }, [
+    campaignCtx, 
+    summary, 
+    classification, 
+    updateGoals, 
+    saveCurrentCampaignState, 
+    campaignId, 
+    navigate, 
+    toast
+  ]);
+
+  return <ConfirmGoalsComponent
+            initialGoals={contextGoalsFromCtx || []}
+            onConfirm={handleConfirm}
+         />;
+}
+
+// --- RankGoalsPage (Structure similar to EditClassificationPage for context handling) ---
+export function RankGoalsPage() {
+  const navigate = useNavigate();
+  const { toast } = useToast();
+  const campaignCtx = useContext(CampaignContext);
+  console.log("RankGoalsPage: Render cycle. Raw CampaignContext:", campaignCtx);
+
+
+  useEffect(() => {
+    if(campaignCtx){
+        console.log("RankGoalsPage Mounted/Ctx Updated - Context State:", { 
+            summary: campaignCtx.summary, 
+            classification: campaignCtx.classification, 
+            goalsLength: campaignCtx.goals?.length, 
+            campaignId: campaignCtx.campaignId 
+        });
+        if (!campaignCtx.summary || !campaignCtx.classification || !campaignCtx.goals || campaignCtx.goals.length === 0) {
+          console.warn("RankGoalsPage: Context 'summary', 'classification', or 'goals' is missing/empty on mount/update.");
+        }
+    } else {
+        console.error("RankGoalsPage Mounted/Ctx Updated: CampaignContext is NULL!");
+    }
+  }, [campaignCtx]);
+
+  if (!campaignCtx) {
+    console.error("RankGoalsPage: CampaignContext is not available during render setup!");
+    return <p>Error: Campaign context is critically unavailable.</p>;
+  }
+  const {
+    summary,
+    classification,
+    goals: contextGoalsFromCtx,
+    updateGoals,
+    saveCurrentCampaignState,
+    campaignId
+  } = campaignCtx;
+
+  const handleRankedAndSave = useCallback(async (rankedGoalsFromForm) => {
+    console.log("RankGoalsPage: handleRankedAndSave triggered.");
+    console.log("RankGoalsPage handleRankedAndSave: rankedGoalsFromForm:", rankedGoalsFromForm);
+    console.log("RankGoalsPage handleRankedAndSave: Context values at call time - summary:", summary, "classification:", classification, "campaignId:", campaignId);
+
+    if (!checkContextFunctions(campaignCtx, ['updateGoals', 'saveCurrentCampaignState'])) {
+        toast({ variant: "destructive", title: "Context Error", description: "Critical context functions are missing." });
+        return;
+    }
+    updateGoals(rankedGoalsFromForm);
+
+    if (!summary || !classification) {
+        console.error("RankGoalsPage handleRankedAndSave: Critical data (summary or classification) missing from context for save.", { summary, classification });
+        toast({ variant: "destructive", title: "Save Error", description: "Missing summary or classification. Cannot save." });
+        return;
+    }
+
+    const dataToSave = {
+        summary: summary,
+        classification: classification,
+        goals: rankedGoalsFromForm,
+        campaignId: campaignId
+    };
+    console.log("RankGoalsPage handleRankedAndSave: Data being passed to saveCurrentCampaignState:", dataToSave);
+
+    const savedId = await saveCurrentCampaignState("Goal Reordering Confirmed", dataToSave);
+
+    if (savedId) {
+      toast({
+          title: "Campaign Setup Complete!",
+          description: "Classification and goals saved.",
+      });
+      console.log("RankGoalsPage handleRankedAndSave: Save successful, navigating to plan.");
+      navigate(`/app/campaign/plan`);
+    } else {
+       toast({
+            variant: "destructive",
+            title: "Save Failed",
+            description: "Could not save final goal ranking. Please try again.",
+        });
+    }
+  }, [
+    campaignCtx, 
+    summary, 
+    classification, 
+    updateGoals, 
+    saveCurrentCampaignState, 
+    campaignId, 
+    navigate, 
+    toast
+  ]);
+  
+  return <GoalRankingComponent
+            initialGoals={contextGoalsFromCtx || []}
+            onRankedGoalsChange={handleRankedAndSave}
+         />;
+}

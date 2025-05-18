@@ -17,6 +17,9 @@ const PORT = process.env.PORT || 4100;
 app.use(cors());
 app.use(express.json());
 
+const frontendDistPath = path.join(__dirname, '../frontend/dist');
+app.use(express.static(frontendDistPath));
+
 // Swagger setup
 const swaggerSpec = swaggerJsdoc({
   definition: {
@@ -27,10 +30,9 @@ const swaggerSpec = swaggerJsdoc({
     },
     servers: [
       {
-        url: '/api',  // 👈 tells Swagger to prepend /api to all paths
+        url: '/api',  // tells Swagger to prepend /api to all paths
       },
     ],
-
   },
   apis: ['./routes/*.js'],
 });
@@ -40,8 +42,17 @@ app.get('/', (req, res) => {
   res.send('Digital Ad Co-Op Backend');
 });
 
+app.post('/api/test-post', (req, res) => {
+  console.log(`--- ${new Date().toISOString()} /api/test-post HIT! ---`);
+  res.status(200).json({ message: "POST test successful" });
+});
+
 // Routes
 app.use('/api', routes);
+
+app.get('*', (req, res) => {
+  res.sendFile(path.join(frontendDistPath, 'index.html'));
+});
 
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`Server running on port ${PORT}`);

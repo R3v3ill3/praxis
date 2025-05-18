@@ -1,4 +1,4 @@
-// frontend/src/pages/CampaignBuilder.jsx (MODIFIED FOR CLASSIFICATION)
+// frontend/src/pages/CampaignBuilder.jsx
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Textarea } from '../components/ui/Textarea.jsx';
@@ -6,25 +6,25 @@ import { Button } from '../components/ui/Button.jsx';
 import { useToast } from '../components/ui/use-toast.jsx';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/Card.jsx';
 import { useCampaign } from '../contexts/CampaignContext';
-// Import the enhanced classifyCampaign function from your existing file
 import { classifyCampaign } from '../api/classify.js';
+import { sendQuery } from '../api/assistant.js'; // Using sendQuery from assistant.js
 
 export default function CampaignBuilder() {
-  // --- State and Hooks ---
   const [input, setInput] = useState('');
   const [history, setHistory] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const navigate = useNavigate();
   const { toast } = useToast();
-  const { updateCampaignData, resetCampaignData } = useCampaign();
+  // Get campaignId from context for the save call override
+  const { updateCampaignData, resetCampaignData, saveCurrentCampaignState, campaignId } = useCampaign();
   const chatBoxRef = useRef(null);
 
-  // --- Effects ---
   useEffect(() => {
-    console.log("CampaignBuilder Effect: Resetting campaign data.");
+    // Reset campaign data when the component mounts (for a new campaign flow)
+    console.log("CampaignBuilder: Mounting and resetting campaign data.");
     resetCampaignData();
-  }, []);
+  }, [resetCampaignData]); // resetCampaignData from context should be stable
 
   useEffect(() => {
     if (chatBoxRef.current) {
@@ -32,95 +32,144 @@ export default function CampaignBuilder() {
     }
   }, [history]);
 
-  // --- Functions ---
   const sendMessage = async () => {
-    console.log("sendMessage: Called.");
     if (!input.trim()) return;
 
     const userMessage = { role: 'user', content: input };
-    const newHistory = [...history, userMessage];
-    setHistory(newHistory);
+    const currentInput = input;
+    // Update history for API call (pass history *before* current user message)
+    // Then update UI history
+    const historyForApi = [...history];
+    setHistory(prevHistory => [...prevHistory, userMessage]);
     setInput('');
-    setLoading(true); // Set loading true for the entire process (assistant + classifier)
+    setLoading(true);
     setError(null);
-    console.log("sendMessage: Calling API /api/campaign-assistant");
 
     try {
-      // === Step 1: Call the assistant to get summary ===
-      const assistantResponse = await fetch('/api/campaign-assistant', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ input: userMessage.content, history: newHistory }),
-      });
+      const assistantData = await sendQuery(currentInput, historyForApi);
 
-      console.log("sendMessage (Assistant): API Response Status:", assistantResponse.status);
-      if (!assistantResponse.ok) {
-          const errorData = await assistantResponse.json().catch(() => ({ message: "Failed to parse assistant error response" }));
-          console.error("sendMessage (Assistant): API Error Response Data:", errorData);
-          throw new Error(errorData.message || `Assistant API request failed with status ${assistantResponse.status}`);
+      if (!assistantData) {
+        throw new Error("AI assistant returned no data or failed.");
       }
+      console.log("CampaignBuilder sendMessage: Assistant API Response Data:", assistantData);
 
-      const assistantData = await assistantResponse.json();
-      console.log("sendMessage (Assistant): API Response Data:", assistantData);
-      const { aiMessage, done, structured, ...summaryData } = assistantData;
+      const {
+        aiMessage,
+        done,
+        structured: overallStructured,
+        classification_guess,
+        summary: assistantSummaryObject, // This is the campaign summary object
+        processed_goals // Expected as {id, label, rank}[] from backend
+      } = assistantData;
 
-      // Update history with AI message if it exists
       if (aiMessage) {
-          setHistory((prev) => [...prev, { role: 'assistant', content: aiMessage }]);
-      } else {
-          console.warn("sendMessage (Assistant): Received response but no aiMessage content.");
+        setHistory((prevHistory) => [...prevHistory, { role: 'assistant', content: aiMessage }]);
       }
 
-      // === Step 2: Check if done and proceed to classification ===
-      if (done && structured) {
-        console.log("sendMessage: Assistant Done & Structured. Proceeding to classification.");
-        // Keep loading=true
+      if (done && overallStructured && assistantSummaryObject) {
+        console.log("CampaignBuilder: Assistant Done & Overall Structured.");
 
-        // 2a. Prepare summary data object (ensure goals is included)
-        // Include structured flag from assistant response in the summary saved to context
-        const completeSummary = { ...summaryData, structured: true, goals: summaryData.goals || [] };
-        console.log("CampaignBuilder: Object being sent to classifyCampaign helper (this is completeSummary):", JSON.stringify(completeSummary, null, 2));
-        console.log("sendMessage: Updating context with summary:", completeSummary);
-        updateCampaignData({ summary: completeSummary });
+        // Prepare data for context update
+        const newSummary = assistantSummaryObject;
+        const newClassificationGuess = classification_guess;
+        const newGoals = processed_goals || [];
 
-        // 2b. Call the classification API using the imported function
-        console.log("sendMessage: Calling classifyCampaign API...");
-        // Pass the summary object, the backend expects { summary: { ... } }
-        const classificationResult = await classifyCampaign(completeSummary);
-        console.log("sendMessage: Classification result received:", classificationResult);
+        updateCampaignData({
+          summary: newSummary,
+          classification_guess: newClassificationGuess,
+          goals: newGoals
+        });
 
-        // classifyCampaign now throws error on failure or no match, so we just need result here
-        // 2c. Update context with classification
-        console.log("sendMessage: Updating context with classification:", classificationResult);
-        updateCampaignData({ classification: classificationResult });
+        let finalClassificationForContext = null;
+        if (newClassificationGuess && newClassificationGuess.primary_type) {
+          finalClassificationForContext = {
+            primary_type: newClassificationGuess.primary_type,
+            secondary_type: newClassificationGuess.secondary_type,
+            sub_type: newClassificationGuess.use_case,
+            id: null, type_id: null, subtype_id: null,
+            source: 'ai_guess'
+          };
+        } else {
+          try {
+            const cleanedSummaryForProgrammatic = {
+              ...newSummary,
+              goals: newSummary.goals?.map(g => {
+                const match = g.match(/^(.*?)\s*→ Goal Type:/);
+                return match ? match[1].trim() : g.trim();
+              }).filter(g => g) || []
+            };
+            const programmaticResult = await classifyCampaign(cleanedSummaryForProgrammatic);
+            if (programmaticResult) { // classify.js returns the match object directly or throws
+              finalClassificationForContext = { ...programmaticResult, source: 'programmatic' };
+            } else {
+              toast({ title: "Classification", description: "Could not programmatically classify campaign." });
+            }
+          } catch (classificationError) {
+            console.error("CampaignBuilder: Programmatic classification error -", classificationError)
+            toast({ variant: "destructive", title: "Classification Error", description: classificationError.message });
+          }
+        }
 
-        // 2d. Navigate to review page (Confirm path is correct from App.jsx)
-        console.log("sendMessage: Navigating to /campaign/review");
-        navigate('/campaign/review');
-        // setLoading will remain true until navigation unmounts the component
+        if (finalClassificationForContext) {
+          updateCampaignData({ classification: finalClassificationForContext });
+        } else {
+          updateCampaignData({ classification: null });
+          toast({ title: "Classification", description: "No campaign classification could be determined automatically." });
+        }
+        
+                        
+        // CRITICAL FIX: Pass data directly to saveCurrentCampaignState
+        if (newSummary && finalClassificationForContext && newGoals.length > 0) {
+          console.log("CampaignBuilder: Attempting initial save with direct data override:", {
+            summary: newSummary,
+            classification: finalClassificationForContext,
+            goals: newGoals,
+            campaignId: campaignId || null // Pass current campaignId from context (should be null for new)
+          });
+          const savedId = await saveCurrentCampaignState(
+            "Campaign Classification Complete",
+            {
+              summary: newSummary,
+              classification: finalClassificationForContext,
+              goals: newGoals,
+              campaignId: campaignId || null // Use context's campaignId, which should be null on first save
+                                          // saveCurrentCampaignState will update context's campaignId if backend returns one
+            }
+          );
+          if (!savedId) {
+            console.warn("CampaignBuilder: Initial save FAILED or was skipped by context save function. Check logs.");
+            toast({
+                variant: "destructive",
+                title: "Save Failed",
+                description: "Failed to save initial campaign details. Please try again or check console.",
+                duration: 5000,
+            });
+            // Potentially do not navigate if save is critical
+            // For now, allowing navigation to proceed for testing further steps
+          }
+        } else {
+          console.warn("CampaignBuilder: Skipping initial save due to incomplete data for save payload.", { newSummary, finalClassificationForContext, newGoals });
+          toast({ variant: "destructive", title: "Save Skipped", description: "Initial campaign data was incomplete. Progress not saved." });
+        }
+        
+        navigate('/app/campaign/edit-classification');
 
-      } else if (done && !structured) {
-         // Handle case where AI finished but couldn't parse structure
-         console.warn("sendMessage: Done, but summary structure parsing failed by assistant. Staying on page.");
-         setError("Assistant finished, but I couldn't understand the summary format. Please review or try again.");
-         setLoading(false); // Stop loading here
-      } else {
-         // If not done, just stop loading, stay on page for next message
-         setLoading(false);
+      } else if (done && (!overallStructured || !assistantSummaryObject)) {
+         setError("Assistant finished, but the summary was incomplete or not understood.");
+         updateCampaignData({
+            summary: assistantSummaryObject || null,
+            classification_guess: classification_guess || null,
+            goals: processed_goals || [],
+            classification: null
+         });
       }
-
     } catch (err) {
-      // This catch block now handles errors from BOTH assistant fetch and classifyCampaign calls
-      console.error('❌ Error in sendMessage or Classification step:', err);
-      toast({
-        variant: 'destructive',
-        title: 'Error',
-        description: err.message || 'An unexpected error occurred.',
-      });
+      console.error('❌ Error in sendMessage (CampaignBuilder):', err);
+      toast({ variant: 'destructive', title: 'Error', description: err.message || 'AI assistant interaction failed.' });
       setError(err.message || 'An unexpected error occurred.');
-      setLoading(false); // Ensure loading stops on any error
+    } finally {
+      setLoading(false);
     }
-    // Removed the 'finally' block as setLoading(false) is handled in the specific logic paths
   };
 
   const handleKeyDown = (e) => {
@@ -130,8 +179,6 @@ export default function CampaignBuilder() {
     }
   };
 
-  // --- Render ---
-  // (Render logic remains the same)
   return (
     <div className="container py-8">
       <Card className="max-w-3xl mx-auto">
@@ -140,12 +187,11 @@ export default function CampaignBuilder() {
         </CardHeader>
         <CardContent>
           <div className="space-y-4">
-            {/* Chat history display */}
             <div
               ref={chatBoxRef}
               className="min-h-[200px] max-h-[400px] overflow-y-auto border rounded p-4 bg-gray-50 flex flex-col gap-2"
             >
-              {history.length === 0 && (
+              {history.length === 0 && !loading && (
                 <p className="text-muted-foreground">Start by describing what you’re working on…</p>
               )}
               {history.map((msg, idx) => (
@@ -157,15 +203,19 @@ export default function CampaignBuilder() {
                       : 'bg-gray-200 text-gray-800 self-start mr-auto'
                   }`}
                 >
-                  <strong>{msg.role === 'user' ? 'You' : 'Assistant'}:</strong> {msg.content ?? '*Missing message content*'}
+                  <strong>{msg.role === 'user' ? 'You' : 'Assistant'}:</strong> {msg.content ?? '*Missing content*'}
                 </div>
               ))}
-               {/* Updated loading message */}
-               {loading && <p className="text-muted-foreground self-start mr-auto px-4 py-2">Processing... (includes classification)</p>}
+               {loading && (
+                <div className="self-start mr-auto px-4 py-2">
+                    <p className="text-muted-foreground">Assistant is thinking...</p>
+                </div>
+               )}
             </div>
-
-            {/* Input area */}
+            <label htmlFor="campaign-input" className="sr-only">Describe your campaign</label>
             <Textarea
+              id="campaign-input"
+              name="campaign_input"
               placeholder="Type your message and hit Enter…"
               value={input}
               onChange={(e) => setInput(e.target.value)}
@@ -173,13 +223,9 @@ export default function CampaignBuilder() {
               rows={3}
               disabled={loading}
             />
-
             <Button onClick={sendMessage} disabled={loading || !input.trim()}>
-               {/* Updated button text */}
               {loading ? 'Processing…' : 'Send'}
             </Button>
-
-            {/* Error display */}
             {error && <p className="text-red-500 text-sm">{error}</p>}
           </div>
         </CardContent>

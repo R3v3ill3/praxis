@@ -1,0 +1,9 @@
+module.exports = {
+  apps: [{
+    name: "praxis-backend-dev",
+    script: "server.js",
+    cwd: "/var/www/praxis-dev/backend-node",
+    watch: false,
+    interpreter: "/home/troy/.nvm/versions/node/v22.15.1/bin/node" // Ensure this is your correct NVM Node path
+  }]
+};

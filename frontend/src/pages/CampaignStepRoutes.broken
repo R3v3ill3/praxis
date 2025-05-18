@@ -1,0 +1,96 @@
+// frontend/src/pages/CampaignStepRoutes.jsx (RankGoalsPage portion)
+
+// ... (EditClassificationPage and ConfirmGoalsPage remain as per your last working versions) ...
+
+export function RankGoalsPage() {
+  const navigate = useNavigate();
+  const { toast } = useToast();
+  const campaignCtx = useContext(CampaignContext); // Get the whole context object
+
+  useEffect(() => {
+    if (campaignCtx) {
+        console.log("RankGoalsPage Mounted/Ctx Updated - Context State:", {
+            summary: campaignCtx.summary,
+            classification: campaignCtx.classification,
+            goalsLength: campaignCtx.goals?.length,
+            campaignId: campaignCtx.campaignId
+        });
+        if (!campaignCtx.summary) {
+            console.error("RankGoalsPage: CRITICAL - Summary is missing from context on mount!");
+            toast({ variant: "destructive", title: "State Error", description: "Campaign summary is missing. Data may be incomplete.", duration: 7000 });
+        }
+    } else {
+        console.error("RankGoalsPage: campaignCtx is NULL on mount/update.");
+    }
+  }, [campaignCtx, toast]);
+
+  if (!campaignCtx) {
+    return <p>Error: Campaign context is critically unavailable.</p>;
+  }
+
+  // Destructure after checking campaignCtx
+  const {
+    summary, // We will log campaignCtx.summary directly before navigation
+    classification,
+    goals: contextGoalsFromCtx,
+    updateGoals,
+    saveCurrentCampaignState,
+    campaignId
+  } = campaignCtx;
+
+  const handleRankedAndSave = useCallback(async (finalRankedGoalsFromComponent) => {
+    console.log("RankGoalsPage: handleRankedAndSave triggered with:", finalRankedGoalsFromComponent);
+    console.log("RankGoalsPage: Context at call time - summary:", summary, "classification:", classification, "campaignId:", campaignId);
+
+    if (!checkContextFunctions(campaignCtx, ['updateGoals', 'saveCurrentCampaignState'])) {
+        toast({ variant: "destructive", title: "Context Error", description: "Critical context functions missing." });
+        return;
+    }
+
+    updateGoals(finalRankedGoalsFromComponent);
+
+    if (!summary || !classification) { // Check summary and classification from the destructured context
+        console.error("RankGoalsPage: Critical data (summary or classification) missing from context for save.", { summary, classification });
+        toast({ variant: "destructive", title: "Save Error", description: "Missing summary or classification for saving ranks." });
+        return;
+    }
+
+    const dataToSave = {
+        summary: summary,
+        classification: classification,
+        goals: finalRankedGoalsFromComponent,
+        campaignId: campaignId
+    };
+    console.log("RankGoalsPage: Data being passed to saveCurrentCampaignState:", dataToSave);
+
+    const savedId = await saveCurrentCampaignState("Goal Reordering Confirmed", dataToSave);
+
+    if (savedId) {
+      toast({ title: "Campaign Goals Ranked!", description: "Goal ranking has been saved." });
+      
+      // CRITICAL LOG: Log the summary from the direct context object reference
+      console.log("RankGoalsPage: Save successful. campaignCtx.summary JUST BEFORE navigating:", campaignCtx.summary);
+      console.log("RankGoalsPage: campaignCtx.campaignId JUST BEFORE navigating:", campaignCtx.campaignId);
+
+
+      if (!campaignCtx.summary || !campaignCtx.campaignId) {
+          console.error("RankGoalsPage: CRITICAL ERROR - Summary or Campaign ID in context became null/undefined AFTER save but BEFORE navigating!");
+          toast({variant: "destructive", title: "State Error", description: "Critical campaign data was lost unexpectedly. Please try again.", duration: 7000});
+          return; // Do not navigate if essential data for next step is lost
+      }
+      // Navigate to your new "next steps summary page"
+      navigate(`/app/campaign/next-steps-summary`); // NEW NAVIGATION TARGET
+    } else {
+       toast({ variant: "destructive", title: "Save Failed", description: "Could not save final goal ranking." });
+    }
+  }, [campaignCtx, summary, classification, updateGoals, saveCurrentCampaignState, campaignId, navigate, toast]);
+  
+  if (!contextGoalsFromCtx || contextGoalsFromCtx.length === 0) {
+      console.warn("RankGoalsPage: No goals in context to rank.");
+  }
+
+  return <GoalRankingComponent
+            initialGoals={contextGoalsFromCtx || []}
+            onRankedGoalsChange={handleRankedAndSave}
+         />;
+}

@@ -1,0 +1,13 @@
+// ecosystem.config.js (MINIMAL TEST VERSION)
+module.exports = {
+  apps: [{
+    name: "praxis-backend-dev-minimal-config-test", // Use a new name for this test
+    script: "server.js", // Assuming server.js is still the one with routes/swagger commented out
+    cwd: "/var/www/praxis-dev/backend-node",
+    interpreter: "/home/troy/.nvm/versions/node/v22.15.1/bin/node",
+    // NO env block for this test, or only essential ones if absolutely needed by startup before syntax check
+    // env: {
+    //   PORT: 4100 // For example, if your server.js immediately errors without it
+    // }
+  }]
+};
