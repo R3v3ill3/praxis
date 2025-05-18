@@ -27,3 +27,6 @@ EOF
 
 *.zip
 praxis-dev/.env
+
+
+backend-node/digital-coop-a3083-firebase-adminsdk-fbsvc-556d91f197.json
