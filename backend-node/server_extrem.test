@@ -1,0 +1,52 @@
+// server.js - EXTREME TEST VERSION
+console.log("--- SERVER.JS EXTREME TEST - LINE 1 ---");
+
+try {
+  console.log("[SERVER.JS EXTREME TEST] About to attempt importing 'path' and 'url' modules.");
+  const path = await import('path');
+  const { fileURLToPath } = await import('url');
+  console.log("[SERVER.JS EXTREME TEST] Successfully imported 'path' and 'url'.");
+
+  const __filename = fileURLToPath(import.meta.url);
+  const __dirname = path.default.dirname(__filename); // path.default because it's a dynamic import
+  const envPath = path.default.resolve(__dirname, '.env');
+  console.log(`[SERVER.JS EXTREME TEST] .env path determined: ${envPath}`);
+
+  console.log("[SERVER.JS EXTREME TEST] About to attempt importing 'dotenv'.");
+  const dotenv = await import('dotenv');
+  console.log("[SERVER.JS EXTREME TEST] Successfully imported 'dotenv'.");
+
+  console.log("[SERVER.JS EXTREME TEST] About to call dotenv.config().");
+  const dotenvResult = dotenv.default.config({ path: envPath }); // dotenv.default because it's a dynamic import
+
+  if (dotenvResult.error) {
+    console.error("[SERVER.JS EXTREME TEST] Error loading .env file:", dotenvResult.error);
+  } else {
+    if (dotenvResult.parsed) {
+        console.log("[SERVER.JS EXTREME TEST] .env file parsed successfully. Variables loaded:", Object.keys(dotenvResult.parsed));
+    } else {
+        console.warn("[SERVER.JS EXTREME TEST] .env file was found and parsed, but it might be empty or only contain comments.");
+    }
+  }
+  console.log(`[SERVER.JS EXTREME TEST] GOOGLE_APPLICATION_CREDENTIALS: ${process.env.GOOGLE_APPLICATION_CREDENTIALS || 'NOT SET'}`);
+
+} catch (e) {
+  console.error("[SERVER.JS EXTREME TEST] CRITICAL ERROR IN INITIAL SETUP BLOCK:", e);
+}
+
+// Only if the above succeeds, try importing routes
+try {
+  console.log("[SERVER.JS EXTREME TEST] About to attempt importing routes (which might load firebase.js)...");
+  // To be absolutely sure which module imports firebase, you could directly import one of them:
+  // await import('./routes/campaigns.js'); // This directly imports firebase.js
+  // OR continue to import the main router which will pull it in:
+  await import('./routes/index.js');
+  console.log("[SERVER.JS EXTREME TEST] Successfully imported routes (or the specific module that loads firebase.js).");
+} catch (e) {
+  // This is where we expect the "GOOGLE_APPLICATION_CREDENTIALS env var is not set" error
+  // if dotenv didn't successfully set it above.
+  console.error("[SERVER.JS EXTREME TEST] ERROR IMPORTING ROUTES (this is likely the firebase.js issue if GOOGLE_APPLICATION_CREDENTIALS was not set):", e);
+}
+
+console.log("--- SERVER.JS EXTREME TEST - END OF FILE ---");
+process.exit(0); // Ensure it exits cleanly after this test
