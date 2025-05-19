@@ -1,0 +1,183 @@
+// frontend/src/contexts/CampaignContext.jsx
+import React, { createContext, useContext, useState, useCallback } from 'react';
+import { useToast } from '../components/ui/use-toast';
+import { saveCampaignProgress } from '../api/saveCampaignApi'; // Ensure this path is correct
+import { useAuth } from './AuthContext'; // Ensure this path is correct
+
+const CampaignContext = createContext();
+
+export const useCampaign = () => {
+  const ctx = useContext(CampaignContext);
+  if (!ctx) {
+    throw new Error("useCampaign must be used within a CampaignProvider");
+  }
+  return ctx;
+};
+
+const initialMessagingInputsState = {
+  issueName: '',
+  proposedChange: '',
+  geographicContext: '',
+  desiredOutcome: '',
+  primaryAudience: '',
+  audienceProfile: {
+    demographics: '',
+    psychographics: '',
+    priorBeliefs: '',
+    mediaHabits: ''
+  },
+  campaignObjective: '',
+  deliveryContext: {
+    format: '',
+    messenger: '',
+    timing: ''
+  },
+  knownComparisons: '',
+  benchmarkData: ''
+};
+
+export const CampaignProvider = ({ children }) => {
+  // --- START TEMPORARY MOCK DATA FOR DIRECT TESTING ---
+  // TODO: Remove/comment out these initializations for production/full app flow
+  const [campaignId, setCampaignId] = useState("test-campaign-id-direct-messaging");
+  const [summary, setSummary] = useState({
+    purpose: "Direct Test: Fight for Fair Wages",
+    location: "Direct Test: City Hospital",
+    audience: "Direct Test: Nurses and Hospital Staff",
+    intent: "Direct Test: Negotiate a better enterprise agreement",
+    target: "Direct Test: Hospital Management/Board", // Added target as it's often related
+    problem: "Direct Test: Stagnant wages and poor conditions" // Added problem
+    // Add other fields from your actual summary object if MessagingDevelopmentChatPage's pre-filling uses them
+  });
+  const [classification, setClassification] = useState({
+    primary_type: "Workplace & Union",
+    secondary_type: "Industrial Action",
+    use_case: "Enterprise Bargaining",
+    type_id: "workplace_union", // Example
+    subtype_id: "workplace_union_industrial_action", // Example
+    id: "wu_ia_eb" // Example
+  });
+  const [goals, setGoals] = useState([
+    { id: "goal1_direct", label: "Achieve a 6% pay rise", rank: 1 },
+    { id: "goal2_direct", label: "Improve staffing ratios", rank: 2 },
+    { id: "goal3_direct", label: "Increase union membership", rank: 3 },
+  ]);
+  // --- END TEMPORARY MOCK DATA ---
+
+  // Original state initializations (will be overridden by mocks if active)
+  // const [campaignId, setCampaignId] = useState(null);
+  // const [summary, setSummary] = useState(null);
+  // const [classification, setClassification] = useState(null);
+  const [classificationGuess, setClassificationGuess] = useState(null); // Keep as is or mock if needed by page
+  // const [goals, setGoals] = useState([]);
+  const [messagingInputs, setMessagingInputs] = useState(null);
+
+  const { toast } = useToast();
+  const { user } = useAuth();
+
+  const updateCampaignData = useCallback((data) => {
+    console.log("✅ CTX UPDATE: updateCampaignData called with:", data);
+    // Only update if not using mock data or if explicitly allowed
+    // This logic might need adjustment depending on how you want mocks to behave with updates
+    if (data.campaignId !== undefined) setCampaignId(prev => data.campaignId !== prev ? data.campaignId : prev);
+    if (data.summary !== undefined) setSummary(prev => data.summary !== prev ? data.summary : prev);
+    if (data.classification !== undefined) setClassification(prev => data.classification !== prev ? data.classification : prev);
+    if (data.classification_guess !== undefined) setClassificationGuess(prev => data.classification_guess !== prev ? data.classification_guess : prev);
+    if (data.goals !== undefined) {
+      const formatted = (data.goals || []).map((g, index) => ({
+        id: g.id || `temp-goal-${Date.now()}-${index}`,
+        label: g.label || (typeof g.id === 'string' ? g.id.replace(/_/g, ' ') : `Goal ${index + 1}`),
+        rank: typeof g.rank === 'number' ? g.rank : index + 1,
+      }));
+      setGoals(prevGoals => JSON.stringify(prevGoals) !== JSON.stringify(formatted) ? formatted : prevGoals);
+    }
+  }, []);
+
+  const resetCampaignData = useCallback(() => {
+    console.log("✅ CTX RESET: resetCampaignData called");
+    // When resetting, you might want to clear the mocks or re-apply them if you're still in test mode
+    // For now, this will clear them to null/empty.
+    setCampaignId(null); // Or re-set to mock ID if preferred during testing
+    setSummary(null);   // Or re-set to mock summary
+    setClassification(null); // Or re-set to mock classification
+    setClassificationGuess(null);
+    setGoals([]);       // Or re-set to mock goals
+    setMessagingInputs(null);
+  }, []);
+
+  const updateMessagingInputs = useCallback((newInputs) => {
+    setMessagingInputs(prevInputs => {
+      const baseInputs = prevInputs || { ...initialMessagingInputsState, audienceProfile: {...initialMessagingInputsState.audienceProfile}, deliveryContext: {...initialMessagingInputsState.deliveryContext} };
+      const updated = {
+        ...baseInputs,
+        ...newInputs,
+        audienceProfile: { ...baseInputs.audienceProfile, ...(newInputs.audienceProfile || {}) },
+        deliveryContext: { ...baseInputs.deliveryContext, ...(newInputs.deliveryContext || {}) },
+      };
+      return updated;
+    });
+  }, []);
+
+  const saveCurrentCampaignState = useCallback(async (currentStepDescription, dataOverride = null) => {
+    const currentSummary = dataOverride?.summary ?? summary;
+    const currentClassification = dataOverride?.classification ?? classification;
+    const currentGoals = dataOverride?.goals ?? goals;
+    const currentCampaignId = dataOverride?.campaignId ?? campaignId;
+
+    if (!currentSummary || !currentClassification || !currentGoals) {
+      toast({ variant: "destructive", title: "Save Error", description: `Cannot save: core data missing.` });
+      return null;
+    }
+
+    const campaignDataPayload = {
+      summary: currentSummary,
+      classification: { /* map currentClassification fields */ },
+      goals: currentGoals,
+    };
+
+    try {
+      const responseData = await saveCampaignProgress(currentCampaignId, campaignDataPayload);
+      toast({ title: "Campaign Progress Saved", description: `Progress saved. ID: ${responseData.id}` });
+      if (responseData.id && (!campaignId || campaignId !== responseData.id)) {
+        setCampaignId(responseData.id);
+      }
+      return responseData.id;
+    } catch (error) {
+      toast({ variant: "destructive", title: "Save Error", description: error.message || `Failed to save.`});
+      return null;
+    }
+  }, [summary, classification, goals, campaignId, user, toast]);
+
+  const updateClassificationContext = useCallback((newClassification) => {
+    updateCampaignData({ classification: newClassification });
+  }, [updateCampaignData]);
+
+  const updateGoalsContext = useCallback((newGoals) => {
+    const formattedGoals = (newGoals || []).map((g, index) => ({ /* ... */ }));
+    updateCampaignData({ goals: formattedGoals });
+  }, [updateCampaignData]);
+
+  return (
+    <CampaignContext.Provider
+      value={{
+        campaignId,
+        summary,
+        classification,
+        classificationGuess,
+        goals,
+        messagingInputs,
+        initialMessagingInputs: initialMessagingInputsState,
+        updateCampaignData,
+        resetCampaignData,
+        updateClassification: updateClassificationContext,
+        updateGoals: updateGoalsContext,
+        saveCurrentCampaignState,
+        updateMessagingInputs,
+      }}
+    >
+      {children}
+    </CampaignContext.Provider>
+  );
+};
+
+export default CampaignContext;

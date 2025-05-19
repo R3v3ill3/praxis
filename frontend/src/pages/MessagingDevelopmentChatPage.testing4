@@ -9,32 +9,13 @@ import { Button } from '@/components/ui/Button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { useToast } from '@/components/ui/use-toast';
 
-// Define the constant needed for display purposes
-const ALL_POTENTIAL_KEYS_WITH_FRIENDLY_NAMES = {
-    "issueName": "The core issue or problem your campaign addresses",
-    "geographicContext": "The specific location or community context of your campaign",
-    "proposedChange": "The specific change or solution your campaign is proposing",
-    "primaryAudience": "The main group of people you want to reach and persuade with your messaging",
-    "desiredOutcome": "The ultimate overall outcome or impact you hope to achieve with the campaign",
-    "campaignObjective": "A more specific objective for this particular messaging effort",
-    "audienceProfile.demographics": "Key demographics of your primary audience",
-    "audienceProfile.psychographics": "Common values, attitudes, or lifestyles of your audience",
-    "audienceProfile.priorBeliefs": "What your audience likely already thinks about the issue",
-    "audienceProfile.mediaHabits": "How your audience typically gets information",
-    "deliveryContext.format": "Planned message formats (e.g., social media, flyers)",
-    "deliveryContext.messenger": "Who would be best to deliver these messages",
-    "deliveryContext.timing": "Any specific timing considerations for message delivery",
-    "knownComparisons": "Similar campaigns or messaging efforts you're aware of",
-    "benchmarkData": "Existing data related to audience awareness or attitudes"
-};
-
 export default function MessagingDevelopmentChatPage() {
   const {
-    campaignId,
+    campaignId, // This is the one from context (potentially mock)
     summary,
     classification,
     goals,
-    initialMessagingInputs,
+    initialMessagingInputs, // This is the static structure
     messagingInputs: contextMessagingInputs, // Current state of messagingInputs in context
     updateMessagingInputs, // Function to update messagingInputs in context
     saveCurrentCampaignState, // Function to save all campaign data
@@ -45,22 +26,23 @@ export default function MessagingDevelopmentChatPage() {
 
   const [conversationHistory, setConversationHistory] = useState([]);
   const [userInput, setUserInput] = useState('');
+  // knownInputs will be the local copy for the chat session, initialized from context or pre-filled.
   const [knownInputs, setKnownInputs] = useState(null);
   const [currentFieldInFocus, setCurrentFieldInFocus] = useState(null);
   const [isChatComplete, setIsChatComplete] = useState(false);
   const [loading, setLoading] = useState(false);
 
-  const initCalledRef = useRef(false);
+  const initCalledRef = useRef(false); // Prevents multiple initial API calls
   const [isInitializingChat, setIsInitializingChat] = useState(true);
-  const [initializationStatus, setInitializationStatus] = useState('pending');
+  const [initializationStatus, setInitializationStatus] = useState('pending'); // 'pending', 'success', 'error'
 
   const messagesEndRef = useRef(null);
-  const didSaveFinalDataRef = useRef(false); // <<< ADD THIS REF TO PREVENT SAVE LOOP
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [conversationHistory]);
 
+  // Effect for initializing the chat with pre-filled data
   useEffect(() => {
     if (!campaignId || !summary || !classification || !goals || !initialMessagingInputs ) {
       if (campaignId && (!summary || !classification || !goals || !initialMessagingInputs)) {
@@ -73,9 +55,10 @@ export default function MessagingDevelopmentChatPage() {
          });
          console.error("ChatPage Init: Missing essential campaign context data", { campaignId, summary, classification, goals, initialMessagingInputs });
       }
-      return;
+      return; // Wait for all context data
     }
 
+    // Only run initialization once, or if knownInputs hasn't been set up yet.
     if (initCalledRef.current || knownInputs !== null) {
       setIsInitializingChat(false);
       return;
@@ -83,14 +66,17 @@ export default function MessagingDevelopmentChatPage() {
 
     setIsInitializingChat(true);
     initCalledRef.current = true;
-    didSaveFinalDataRef.current = false; // Reset save flag on re-initialization
 
+    // Start with a deep copy of the context's current messagingInputs if available and structured,
+    // otherwise, start from the initial static structure and pre-fill.
     let prefilledData = contextMessagingInputs && Object.keys(contextMessagingInputs).length > 0 && contextMessagingInputs.issueName !== undefined
                        ? JSON.parse(JSON.stringify(contextMessagingInputs))
                        : JSON.parse(JSON.stringify(initialMessagingInputs));
 
     console.log("ChatPage Init: Starting prefill with base:", JSON.parse(JSON.stringify(prefilledData)));
 
+    // Pre-fill from summary and goals if the corresponding fields in prefilledData are empty
+    // This allows contextMessagingInputs to take precedence if already populated.
     if (summary) {
       prefilledData.issueName = prefilledData.issueName || summary.purpose || '';
       prefilledData.geographicContext = prefilledData.geographicContext || summary.location || '';
@@ -100,16 +86,18 @@ export default function MessagingDevelopmentChatPage() {
     }
     if (goals && goals.length > 0) {
       prefilledData.desiredOutcome = prefilledData.desiredOutcome || goals.map(g => g.label).join('; ') || '';
+      // If proposedChange wasn't in summary, try to get it from the first goal
       prefilledData.proposedChange = prefilledData.proposedChange || (goals[0] && goals[0].label) || '';
     }
 
-    setKnownInputs(prefilledData);
+    setKnownInputs(prefilledData); // Set the local state for the chat
     console.log("ChatPage Init: Initial knownInputs for chat (after prefill):", JSON.parse(JSON.stringify(prefilledData)));
     console.log("ChatPage Init: Classification to be sent:", classification);
 
+    // Make the initial API call to the backend
     handleApiCall('', [], prefilledData, classification, true);
 
-  }, [campaignId, summary, classification, goals, initialMessagingInputs, contextMessagingInputs, toast]); // Removed knownInputs from here to avoid loop on setKnownInputs
+  }, [campaignId, summary, classification, goals, initialMessagingInputs, contextMessagingInputs, knownInputs, toast]);
 
 
   const handleApiCall = async (userMessage = '', currentHistory, currentLocalKnownInputs, currentClassification, isInitialCall = false) => {
@@ -122,39 +110,35 @@ export default function MessagingDevelopmentChatPage() {
 
     setLoading(true);
     let newHistory = [...currentHistory];
-    // Removed: if (userMessage && !isInitialCall) because currentHistory already includes the latest user message from handleSubmit
-    // newHistory = [...newHistory, { role: 'user', content: userMessage }];
+    if (userMessage && !isInitialCall) { // Don't add empty initial user message to history
+      newHistory = [...newHistory, { role: 'user', content: userMessage }];
+    }
 
     try {
       console.log("ChatPage: Sending to API - knownInputs:", JSON.parse(JSON.stringify(currentLocalKnownInputs)));
       const response = await sendMessagingChatTurn({
         campaignId,
-        conversationHistory: newHistory,
-        knownInputs: currentLocalKnownInputs,
+        conversationHistory: newHistory, // Send the history that includes the latest user message
+        knownInputs: currentLocalKnownInputs, // Send the most up-to-date local knownInputs
         classification: currentClassification,
       });
       console.log("ChatPage: Received from API:", response);
 
-      setConversationHistory(prev => { // Use functional update for history based on the newHistory sent
-          const updatedHistory = [...prev];
-          // Ensure the assistant message isn't duplicated if already present from an error fallback
-          const lastMessage = updatedHistory[updatedHistory.length -1];
-          if(lastMessage && lastMessage.role === 'assistant' && lastMessage.content.startsWith('Error communicating')) {
-            updatedHistory.pop(); // Remove temp error
-          }
-          updatedHistory.push({ role: 'assistant', content: response.aiMessage });
-          return updatedHistory;
-      });
+      // Update conversation history with AI's message
+      setConversationHistory(prev => [...prev.filter(m => m.role !== 'error-temp'), { role: 'assistant', content: response.aiMessage }]);
 
-      setKnownInputs(response.updatedKnownInputs);
+      setKnownInputs(response.updatedKnownInputs); // Update local knownInputs with data extracted by AI
       setCurrentFieldInFocus(response.fieldInFocus);
+      // setIsChatComplete(response.isComplete); // Defer this to useEffect below
 
       if (isInitialCall) {
         setInitializationStatus('success');
-      }
-      // Set isChatComplete based on the latest API response
-      if (response.isComplete) {
-        setIsChatComplete(true);
+        // If the initial call already completes the chat (e.g., all data pre-filled and valid)
+        if (response.isComplete) {
+            setIsChatComplete(true);
+        }
+      } else if (response.isComplete) {
+        setIsChatComplete(true); // Set chat complete if API says so
       }
 
     } catch (err) {
@@ -171,41 +155,28 @@ export default function MessagingDevelopmentChatPage() {
 
   // Effect to handle saving when chat is complete
   useEffect(() => {
-    // Only run if chat is complete, knownInputs are available, AND we haven't saved yet.
-    if (isChatComplete && knownInputs && !didSaveFinalDataRef.current) {
-      didSaveFinalDataRef.current = true; // Set the flag immediately to prevent re-runs
-
-      console.log("ChatPage: Chat complete! Attempting final save. Final local knownInputs:", JSON.parse(JSON.stringify(knownInputs)));
+    if (isChatComplete && knownInputs) {
+      console.log("ChatPage: Chat complete! Final local knownInputs:", JSON.parse(JSON.stringify(knownInputs)));
       updateMessagingInputs(knownInputs); // Update the CampaignContext with the final inputs
 
       const saveFinalData = async () => {
         if (!campaignId || !summary || !classification || !goals) {
             toast({ variant: "destructive", title: "Save Error", description: "Core campaign data missing, cannot save final messaging inputs." });
             console.error("ChatPage Save Error: Core context data missing for final save.", {campaignId, summary, classification, goals});
-            // Reset flag if save fails due to missing core data, allowing another attempt if data arrives
-            didSaveFinalDataRef.current = false;
             return;
         }
-        console.log("ChatPage: Calling saveCurrentCampaignState from context...");
-        const dataToSave = { // Construct the payload for saveCurrentCampaignState
-            campaignId,
-            summary,
-            classification,
-            goals,
+        console.log("ChatPage: Attempting to save final messaging inputs to Firestore via context...");
+        await saveCurrentCampaignState("Messaging Chat Completed", {
+            campaignId, // Use current campaignId from context
+            summary,    // Use current summary from context
+            classification, // Use current classification from context
+            goals,      // Use current goals from context
             messaging_inputs: knownInputs // Pass the final collected knownInputs
-        };
-        const savedId = await saveCurrentCampaignState("Messaging Chat Completed", dataToSave);
-        if (!savedId) {
-            // If save failed, reset the flag to allow another attempt if appropriate
-            // (e.g., if the user fixes something and re-triggers completion, though unlikely here)
-             didSaveFinalDataRef.current = false;
-        }
+        });
       };
 
       saveFinalData();
     }
-    // Dependencies should include everything read inside the effect.
-    // The didSaveFinalDataRef.current check guards the execution.
   }, [isChatComplete, knownInputs, updateMessagingInputs, saveCurrentCampaignState, campaignId, summary, classification, goals, toast]);
 
 
@@ -213,14 +184,14 @@ export default function MessagingDevelopmentChatPage() {
     e.preventDefault();
     if (!userInput.trim() || loading || isChatComplete) return;
 
-    const currentMessage = { role: 'user', content: userInput.trim() };
-    // Update conversation history immediately for responsive UI
-    setConversationHistory(prev => [...prev, currentMessage]);
-    // Pass the updated history (including the new user message) to handleApiCall
-    handleApiCall(userInput.trim(), [...conversationHistory, currentMessage], knownInputs, classification);
+    // Add user's message to history immediately for better UX
+    setConversationHistory(prev => [...prev, { role: 'user', content: userInput.trim() }]);
+    // Call API with the current user input and the latest knownInputs
+    handleApiCall(userInput.trim(), [...conversationHistory, {role: 'user', content: userInput.trim()}], knownInputs, classification);
   };
 
-  // --- Conditional Rendering Logic (same as before) ---
+
+  // --- Conditional Rendering Logic ---
   if (isInitializingChat && initializationStatus === 'pending') {
     return (
       <div className="container py-8 max-w-3xl mx-auto text-center">

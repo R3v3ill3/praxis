@@ -12,7 +12,7 @@ try {
     }
 } catch (e) {
     console.error("❌ Failed to initialize OpenAI client:", e.message);
-    openai = null;
+    openai = null; 
 }
 
 // --- Helper Function to Set Nested Values ---
@@ -29,7 +29,7 @@ function setNestedValue(obj, path, value) {
             current[part] = value;
         } else {
             if (!current[part] || typeof current[part] !== 'object') {
-                current[part] = {};
+                current[part] = {}; 
             }
             current = current[part];
         }
@@ -50,7 +50,7 @@ const ALL_POTENTIAL_KEYS_WITH_FRIENDLY_NAMES = {
     "geographicContext": "The specific location or community context of your campaign",
     "proposedChange": "The specific change or solution your campaign is proposing",
     "primaryAudience": "The main group of people you want to reach and persuade with your messaging",
-    "desiredOutcome": "The ultimate overall outcome or impact you hope to achieve with the campaign (this may be related to your main campaign goals, which we have noted from your earlier setup)",
+    "desiredOutcome": "The ultimate overall outcome or impact you hope to achieve with the campaign",
     "campaignObjective": "A more specific objective for this particular messaging effort (e.g., what should people think, feel, or do after seeing/hearing the message?)",
     "audienceProfile.demographics": "Key demographics of your primary audience (e.g., age, gender, occupation, location, specific community groups)",
     "audienceProfile.psychographics": "Common values, attitudes, lifestyles, aspirations, or concerns of your audience",
@@ -65,7 +65,7 @@ const ALL_POTENTIAL_KEYS_WITH_FRIENDLY_NAMES = {
 const ORDERED_ALL_POTENTIAL_KEYS = Object.keys(ALL_POTENTIAL_KEYS_WITH_FRIENDLY_NAMES);
 const OPTIONAL_KEYS = ORDERED_ALL_POTENTIAL_KEYS.filter(k => !REQUIRED_KEYS.includes(k));
 
-const MAX_OPTIONAL_FIELDS_TO_ATTEMPT = 4; // How many optional fields we aim to fill after required ones are done.
+const MAX_OPTIONAL_FIELDS_TO_ATTEMPT = 4;
 
 const initialMessagingInputsState = {
     issueName: '',
@@ -91,7 +91,7 @@ const initialMessagingInputsState = {
 
 // --- Helper Functions (Continued) ---
 function getFieldValue(obj, path) {
-    if (!obj) return undefined;
+    if (!obj || typeof path !== 'string') return undefined;
     const parts = path.split('.');
     let current = obj;
     for (const part of parts) {
@@ -115,23 +115,22 @@ function identifyStillNeeded(knownInputs, keysToCheck) {
 
 function buildIntroMessage(inputs, nextFieldKey, classification) {
     const lines = [];
-    lines.push("👋 Let's work on your messaging strategy. To start, I'll confirm what I understand about your campaign so far (some of this may be pre-filled from your earlier campaign setup):");
-    if (inputs.issueName) lines.push(`- **Issue**: ${inputs.issueName}`);
-    if (classification && classification.primary_type) {
-        lines.push(`- **Campaign Type**: ${classification.primary_type}${classification.secondary_type ? ' - ' + classification.secondary_type : ''}${classification.use_case ? ' (' + classification.use_case + ')' : ''}`);
-    }
-    if (inputs.primaryAudience) lines.push(`- **Primary Audience**: ${inputs.primaryAudience}`);
-    if (inputs.desiredOutcome) lines.push(`- **Desired Outcome**: ${inputs.desiredOutcome}`);
-    lines.push('\nOkay, let\'s dive a bit deeper.');
+    lines.push("👋 Let's work on your messaging strategy. I'll ask a few questions to gather the key details.");
+    lines.push("Some information might be pre-filled from your earlier campaign setup. Let's confirm or fill in the rest.");
 
+    if (inputs.issueName) lines.push(`\nI see the issue is: **${inputs.issueName}**.`);
+    if (classification && classification.primary_type) {
+        lines.push(`It's classified as a **${classification.primary_type}${classification.secondary_type ? ' - ' + classification.secondary_type : ''}${classification.use_case ? ' (' + classification.use_case + ')' : ''}** campaign.`);
+    }
+
+    lines.push('\nOkay, let\'s dive a bit deeper.');
     const specificPrompts = {
-        'audienceProfile.demographics': "To help tailor the message, could you tell me a bit about your audience — perhaps their age, background, or who they are?",
-        'campaignObjective': "For this specific messaging, what’s the main thing you want to achieve? (e.g., raise awareness, encourage an action)",
+        'audienceProfile.demographics': "To help tailor the message, could you tell me a bit more about your primary audience — perhaps their key demographics (e.g., age, occupation, specific community groups)?",
+        'campaignObjective': "For this specific messaging, what’s the main thing you want people to think, feel, or do after seeing/hearing the message?",
     };
-    lines.push(specificPrompts[nextFieldKey] || `First, can you tell me about: ${ALL_POTENTIAL_KEYS_WITH_FRIENDLY_NAMES[nextFieldKey]}?`);
+    lines.push(specificPrompts[nextFieldKey] || `First, can you tell me about: **${ALL_POTENTIAL_KEYS_WITH_FRIENDLY_NAMES[nextFieldKey]}**?`);
     return lines.join('\n');
 }
-
 
 // --- OpenAI Function Calling Schema ---
 const dataExtractionFunctionSchema = {
@@ -144,17 +143,17 @@ const dataExtractionFunctionSchema = {
                 type: "string",
                 description: "Your conversational message to the user (e.g., your next question, an acknowledgement, or a clarifying question to get the required information for the field in focus). This message should guide the user to provide the information if not clear from their last response."
             },
-            extractedFields: {
+            extractedFields: { 
                 type: "object",
                 description: "An object where keys are the specific field names (e.g., 'issueName', 'audienceProfile.demographics') and values are the extracted strings. Only include fields for which data was confidently found in the user's *latest* message. If no data was found for a field, do not include it or set its value to null. If no data was extracted for *any* field in the user's last response, send an empty object {} for extractedFields.",
             }
         },
-        required: ["aiMessage", "extractedFields"]
+        required: ["aiMessage", "extractedFields"] 
     }
 };
 
 // --- Route Handler ---
-router.post('/', async (req, res) => {
+router.post('/', async (req, res) => { // router is used here for the first time
     console.log("\n=============== /api/messaging-chat HIT ===============");
     if (!openai) {
         console.error("❌ OpenAI client not initialized. Aborting.");
@@ -269,7 +268,7 @@ The "aiMessage" should be your conversational reply to the user.
             model: 'gpt-4o',
             messages: messagesForAI,
             functions: [dataExtractionFunctionSchema],
-            function_call: { name: dataExtractionFunctionSchema.name },
+            function_call: { name: dataExtractionFunctionSchema.name }, 
             temperature: 0.6,
         });
 
@@ -293,7 +292,7 @@ The "aiMessage" should be your conversational reply to the user.
             }
 
             aiConversationalMessage = functionArgs.aiMessage || aiConversationalMessage;
-            const extractedDataFromAI = functionArgs.extractedFields || {};
+            const extractedDataFromAI = functionArgs.extractedFields || {}; 
 
             console.log("BACKEND: AI Function Call Arguments:", JSON.stringify(functionArgs, null, 2));
 
@@ -303,9 +302,9 @@ The "aiMessage" should be your conversational reply to the user.
                         if (value !== null && value !== undefined && String(value).trim() !== '') {
                            console.log(`BACKEND: Updating currentInputs.${key} with value: "${value}"`);
                            setNestedValue(currentInputs, key, value);
-                        } else if (value === "" && !REQUIRED_KEYS.includes(key)) {
+                        } else if (value === "" && !REQUIRED_KEYS.includes(key)) { 
                            console.log(`BACKEND: Clearing optional field currentInputs.${key} as AI returned empty string.`);
-                           setNestedValue(currentInputs, key, "");
+                           setNestedValue(currentInputs, key, ""); 
                         }
                     } else {
                         console.warn(`BACKEND: AI tried to extract for an unknown key: ${key}`);
@@ -324,39 +323,16 @@ The "aiMessage" should be your conversational reply to the user.
             console.log("BACKEND (After AI Update): Filled Optional Count:", filledOptionalKeysCount);
             console.log("BACKEND (After AI Update): MAX_OPTIONAL_FIELDS_TO_ATTEMPT:", MAX_OPTIONAL_FIELDS_TO_ATTEMPT);
 
-            // MODIFIED COMPLETION LOGIC BLOCK STARTS HERE
-            let isConversationallyDone = false;
-            if (aiConversationalMessage) { 
-                const lowerAiMessage = aiConversationalMessage.toLowerCase();
-                if (lowerAiMessage.includes("anything else") ||
-                    lowerAiMessage.includes("you're well on your way") ||
-                    lowerAiMessage.includes("we can look at any other aspects") ||
-                    lowerAiMessage.includes("feel free to let me know") || 
-                    lowerAiMessage.includes("sound good?") ||
-                    lowerAiMessage.includes("shall we move on?") ||
-                    lowerAiMessage.includes("we've covered a lot") ||
-                    lowerAiMessage.includes("good amount of information")) {
-                    isConversationallyDone = true;
-                    console.log("BACKEND: AI message sounds like it's concluding or has enough info.");
-                }
-            }
-
             if (stillNeededRequiredKeys.length === 0) {
                 if (stillNeededOptionalKeys.length === 0 || filledOptionalKeysCount >= MAX_OPTIONAL_FIELDS_TO_ATTEMPT) {
                     isNowComplete = true;
-                    console.log(`BACKEND: Setting isNowComplete = true. Reason: Required done, and (all optional done OR enough optional filled). Filled: ${filledOptionalKeysCount}, Needed: ${stillNeededOptionalKeys.length}`);
-                } else if (isConversationallyDone && filledOptionalKeysCount >= 1) { 
-                    isNowComplete = true;
-                    console.log(`BACKEND: Setting isNowComplete = true. Reason: Required done, AI sounds conversationally done, AND at least one optional field was filled. Filled: ${filledOptionalKeysCount}`);
-                }
-                 else {
-                    console.log(`BACKEND: Required done, but optional/conversational completion conditions not met. isConversationallyDone: ${isConversationallyDone}, filledOptionalKeysCount: ${filledOptionalKeysCount}`);
+                    console.log("BACKEND: Setting isNowComplete = true based on field checks.");
+                } else {
+                    console.log("BACKEND: Required done, but optional condition not met for completion.");
                 }
             } else {
-                 console.log("BACKEND: Required fields still needed, not complete. Needed:", stillNeededRequiredKeys);
+                 console.log("BACKEND: Required fields still needed, not complete.");
             }
-            // MODIFIED COMPLETION LOGIC BLOCK ENDS HERE
-
 
             if (isNowComplete) {
                 finalFieldInFocus = null;
@@ -373,10 +349,10 @@ The "aiMessage" should be your conversational reply to the user.
                  }
                  console.log(`BACKEND: Chat not complete. Next field for frontend to focus on: ${finalFieldInFocus}`);
             }
-        } else {
+        } else { 
             aiConversationalMessage = message.content || aiConversationalMessage;
             console.warn("BACKEND: AI did not use function call or arguments were missing. Response content:", message.content);
-            finalFieldInFocus = nextFieldToQuery;
+            finalFieldInFocus = nextFieldToQuery; 
         }
 
         console.log("BACKEND: Final response to frontend:", { aiMessage: aiConversationalMessage, updatedKnownInputs: currentInputs, fieldInFocus: finalFieldInFocus, isComplete: isNowComplete });
@@ -389,10 +365,11 @@ The "aiMessage" should be your conversational reply to the user.
 
     } catch (err) {
         console.error('❌ Messaging Chat Error during OpenAI call:', err);
-        if (err.response && err.response.data) {
+        if (err.response && err.response.data) { 
             console.error('OpenAI API Error Response Data:', err.response.data);
         }
-        if (err instanceof OpenAI.APIError || (err.response && err.response.status)) { 
+        // Ensure OpenAI.APIError is valid for your library version or use a more generic check
+        if (err instanceof OpenAI.APIError || (err.response && err.response.status)) { // Broader check
             return res.status(err.status || err.response?.status || 500).json({ error: `OpenAI API error: ${err.name || 'Unknown'}`, details: err.message, responseData: err.response?.data });
         }
         res.status(500).json({ error: 'Internal server error while communicating with AI.', details: err.message });

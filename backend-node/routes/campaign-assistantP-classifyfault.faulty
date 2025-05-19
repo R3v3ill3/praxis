@@ -1,3 +1,4 @@
+
 // backend-node/routes/campaign-assistant.js
 import express from 'express';
 import OpenAI from 'openai';
@@ -16,8 +17,7 @@ const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 function parseStructuredSummary(text) {
     const summary = {};
-    // Rename 'goals' to 'goals_text' here to clarify these are raw text goals from AI
-    const goals_text = []; // MODIFIED: was 'goals'
+    const goals = [];
     let collectingGoals = false;
     const lines = text.split('\n');
 
@@ -42,27 +42,26 @@ function parseStructuredSummary(text) {
         } else if (trimmedLine.startsWith('- **Goals:**')) {
             collectingGoals = true;
         } else if (collectingGoals && /^[-*]\s+/.test(trimmedLine)) {
-          const goalMatch = trimmedLine.match(/^[-*]\s+(.*)/);
+          const goalMatch = trimmedLine.match(/^[-*]\s+(.*)/);       
             if (goalMatch && goalMatch[1]) {
-                goals_text.push(goalMatch[1].trim()); // MODIFIED: was 'goals'
+                goals.push(goalMatch[1].trim());
             }
         }
     });
 
-    if (goals_text.length > 0) { // MODIFIED: was 'goals'
-        summary.goals_text = goals_text; // MODIFIED: was 'goals', key is now 'goals_text'
+    if (goals.length > 0) {
+        summary.goals = goals;
     }
 
-    // Ensure essential fields are present to consider it a valid structured summary
     if (summary.purpose && summary.audience && summary.target) {
-        summary.structured_parse_success = true; // Internal flag indicating this function considers it parsed
-        if (!summary.goals_text) { // MODIFIED: was 'goals'
-            summary.goals_text = []; // MODIFIED: was 'goals'
+        summary.structured = true;
+        if (!summary.goals) {
+            summary.goals = [];
         }
-        return summary; // summary object contains { purpose, audience, ..., goals_text }
+        return summary;
     }
 
-    return null; // Return null if essential fields are missing
+    return null;
 }
 
 function detectFinalSummaryMessage(message) {
@@ -72,7 +71,7 @@ function detectFinalSummaryMessage(message) {
 router.post('/', async (req, res) => {
 console.log(`--- ${new Date().toISOString()} CAMPAIGN-ASSISTANT ROUTE HIT ---`);
 console.log('Request Body:', JSON.stringify(req.body, null, 2));
-// ... (API key check remains the same)
+console.log('API Key Check in Route:', process.env.OPENAI_API_KEY ? `YES - Starts with: ${process.env.OPENAI_API_KEY.substring(0, 5)}...` : 'NO - API KEY MISSING OR UNDEFINED! CHECK .env AND DOTENV CONFIG.');
   try {
     const { input, history = [] } = req.body;
 
@@ -81,7 +80,6 @@ console.log('Request Body:', JSON.stringify(req.body, null, 2));
     }
 
     const messages = [
-        // ... (system message and history remain the same)
       {
         role: 'system',
         content: `
@@ -157,40 +155,34 @@ Here is the summary:
       return res.status(500).json({ error: 'AI returned empty response.' });
     }
 
-    const isFinalSummaryFromAI = detectFinalSummaryMessage(rawMessage); // Renamed for clarity
+    const isFinalSummary = detectFinalSummaryMessage(rawMessage);
     let responsePayload = {};
 
-    if (isFinalSummaryFromAI) { // Corresponds to 'done: true' on frontend
-        const parsedSummaryObject = parseStructuredSummary(rawMessage); // This is the object {purpose, ..., goals_text} or null
+    if (isFinalSummary) {
+        const parsedSummary = parseStructuredSummary(rawMessage);
 
-        if (parsedSummaryObject && parsedSummaryObject.structured_parse_success) {
-            // MODIFICATION START
+        if (parsedSummary) {
             responsePayload = {
-                summary: parsedSummaryObject, // Nest the parsed summary object
+                ...parsedSummary,
                 aiMessage: rawMessage,
                 done: true,
-                structured: true // Indicates overall AI interaction structure is as expected
+                structured: true
             };
-            // MODIFICATION END
         } else {
-            // MODIFICATION START
             responsePayload = {
-                summary: null, // Explicitly send null if parsing failed or incomplete
                 aiMessage: rawMessage,
-                done: true, // AI indicated it's done, but we couldn't parse it
-                structured: false // Indicates summary structure is not usable
+                done: true,
+                structured: false
             };
-            // MODIFICATION END
         }
     } else {
         responsePayload = {
-            summary: null, // No final summary attempted by AI
             aiMessage: rawMessage,
             done: false,
             structured: false
         };
     }
-    console.log('Campaign Assistant Response Payload:', JSON.stringify(responsePayload, null, 2));
+
     return res.status(200).json(responsePayload);
   } catch (err) {
     console.error('❌ Error in /campaign-assistant:', err.stack || err);

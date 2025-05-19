@@ -1,243 +1,233 @@
-// frontend/src/pages/MessagingDevelopmentChatPage.jsx
-import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { useCampaign } from '../contexts/CampaignContext';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../components/ui/Card';
-import { Button } from '../components/ui/Button';
-import { Input } from '../components/ui/Input';
-import { ScrollArea } from '../components/ui/scroll-area';
-import { useToast } from '../components/ui/use-toast';
+// frontend/pages/app/campaign/MessagingDevelopmentChatPage.jsx
+import React, { useState, useEffect, useContext, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { SendHorizonal } from 'lucide-react';
+import CampaignContext from '@/contexts/CampaignContext';
+import { sendMessagingChatTurn } from '@/api/messaging-chat';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
+import { Textarea } from '@/components/ui/Textarea';
+import { Button } from '@/components/ui/Button';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { useToast } from '@/components/ui/use-toast';
 
-async function sendMessagingChatMessage(payload) {
-  const response = await fetch('/api/messaging-chat', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
-  });
-  if (!response.ok) {
-    const errorData = await response.json().catch(() => ({
-      error: 'Network response was not ok and error response is not valid JSON.',
-      details: `Status: ${response.status}`
-    }));
-    const errorMessage = errorData.error || errorData.details || `Server error: ${response.status}`;
-    throw new Error(errorMessage);
-  }
-  return response.json();
-}
+// Define the constant needed for display purposes
+const ALL_POTENTIAL_KEYS_WITH_FRIENDLY_NAMES = {
+    "issueName": "The core issue or problem your campaign addresses",
+    "geographicContext": "The specific location or community context of your campaign",
+    "proposedChange": "The specific change or solution your campaign is proposing",
+    "primaryAudience": "The main group of people you want to reach and persuade with your messaging",
+    "desiredOutcome": "The ultimate overall outcome or impact you hope to achieve with the campaign",
+    "campaignObjective": "A more specific objective for this particular messaging effort",
+    "audienceProfile.demographics": "Key demographics of your primary audience",
+    "audienceProfile.psychographics": "Common values, attitudes, or lifestyles of your audience",
+    "audienceProfile.priorBeliefs": "What your audience likely already thinks about the issue",
+    "audienceProfile.mediaHabits": "How your audience typically gets information",
+    "deliveryContext.format": "Planned message formats (e.g., social media, flyers)",
+    "deliveryContext.messenger": "Who would be best to deliver these messages",
+    "deliveryContext.timing": "Any specific timing considerations for message delivery",
+    "knownComparisons": "Similar campaigns or messaging efforts you're aware of",
+    "benchmarkData": "Existing data related to audience awareness or attitudes"
+};
 
-const MessagingDevelopmentChatPage = () => {
+export default function MessagingDevelopmentChatPage() {
   const {
     campaignId,
     summary,
+    classification,
     goals,
-    messagingInputs,
-    initialMessagingInputs: contextInitialMessagingInputs,
+    initialMessagingInputs,
+    messagingInputs: contextMessagingInputs,
     updateMessagingInputs,
-  } = useCampaign();
+    saveCurrentCampaignState,
+  } = useContext(CampaignContext);
+
   const navigate = useNavigate();
   const { toast } = useToast();
 
-  const [conversation, setConversation] = useState([]);
-  const [currentUserMessage, setCurrentUserMessage] = useState('');
-  
-  // isLoading is for when the user sends a message
-  const [isLoading, setIsLoading] = useState(false); 
-  
-  // These states are for the initial chat setup
-  const [isInitializing, setIsInitializing] = useState(false);
-  const [initAttempted, setInitAttempted] = useState(false); // Has an attempt been made?
-  const [initSuccess, setInitSuccess] = useState(false);     // Was the attempt successful?
-  const [initError, setInitError] = useState(null);
-
-  const [isComplete, setIsComplete] = useState(false);
+  const [conversationHistory, setConversationHistory] = useState([]);
+  const [userInput, setUserInput] = useState('');
+  const [knownInputs, setKnownInputs] = useState(null);
   const [currentFieldInFocus, setCurrentFieldInFocus] = useState(null);
+  const [isChatComplete, setIsChatComplete] = useState(false);
+  const [loading, setLoading] = useState(false);
 
-  const chatContainerRef = useRef(null);
+  const initCalledRef = useRef(false);
+  const [isInitializingChat, setIsInitializingChat] = useState(true);
+  const [initializationStatus, setInitializationStatus] = useState('pending');
+
+  const messagesEndRef = useRef(null);
 
   useEffect(() => {
-    if (chatContainerRef.current) {
-      chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
-    }
-  }, [conversation]);
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [conversationHistory]);
 
-  const initializeChat = useCallback(async () => {
-    if (!campaignId) {
-      setInitError("Campaign ID is missing. Cannot initialize chat.");
-      setIsInitializing(false); // Ensure loading state is off
+  useEffect(() => {
+    if (!campaignId || !summary || !classification || !goals || !initialMessagingInputs ) {
+      if (campaignId && (!summary || !classification || !goals || !initialMessagingInputs)) {
+         setInitializationStatus('error');
+         setIsInitializingChat(false);
+         toast({
+            variant: "destructive",
+            title: "Missing Campaign Data",
+            description: "Essential campaign data is missing. Please ensure previous steps are complete.",
+         });
+         console.error("ChatPage Init: Missing essential campaign context data", { campaignId, summary, classification, goals, initialMessagingInputs });
+      }
       return;
     }
-    
-    console.log("CALLBACK: initializeChat called.");
-    // No setIsInitializing(true) here, it's set by the useEffect hook
-    setInitError(null);
 
-    let currentKnownInputs = messagingInputs;
-    if (!currentKnownInputs || Object.keys(currentKnownInputs).length === 0) {
-      console.log("MessagingDevelopmentChatPage: Initializing messagingInputs in context for chat.");
-      const initialData = { ...(contextInitialMessagingInputs || {}) }; // Use empty if contextInitial is null
-      if (summary) {
-        initialData.issueName = summary.purpose || initialData.issueName || '';
-        initialData.primaryAudience = summary.audience || initialData.primaryAudience || '';
-      }
-      if (goals && goals.length > 0) {
-        initialData.desiredOutcome = goals.sort((a, b) => a.rank - b.rank).map(g => g.label).join('; ') || initialData.desiredOutcome || '';
-      }
-      updateMessagingInputs(initialData);
-      currentKnownInputs = initialData;
-    } else {
-      console.log("MessagingDevelopmentChatPage: Using existing messagingInputs for chat initial call.");
+    if (initCalledRef.current || knownInputs !== null) {
+      setIsInitializingChat(false);
+      return;
     }
-    
-    const payload = {
-      campaignId,
-      conversationHistory: [],
-      currentUserMessage: '',
-      knownInputs: currentKnownInputs,
-    };
+
+    setIsInitializingChat(true);
+    initCalledRef.current = true;
+
+    let prefilledData = contextMessagingInputs && Object.keys(contextMessagingInputs).length > 0 && contextMessagingInputs.issueName !== undefined
+                       ? JSON.parse(JSON.stringify(contextMessagingInputs))
+                       : JSON.parse(JSON.stringify(initialMessagingInputs));
+
+    console.log("ChatPage Init: Starting prefill with base:", JSON.parse(JSON.stringify(prefilledData)));
+
+    if (summary) {
+      prefilledData.issueName = prefilledData.issueName || summary.purpose || '';
+      prefilledData.geographicContext = prefilledData.geographicContext || summary.location || '';
+      prefilledData.primaryAudience = prefilledData.primaryAudience || summary.audience || '';
+      prefilledData.campaignObjective = prefilledData.campaignObjective || summary.intent || '';
+      prefilledData.proposedChange = prefilledData.proposedChange || summary.proposedChange || '';
+    }
+    if (goals && goals.length > 0) {
+      prefilledData.desiredOutcome = prefilledData.desiredOutcome || goals.map(g => g.label).join('; ') || '';
+      prefilledData.proposedChange = prefilledData.proposedChange || (goals[0] && goals[0].label) || '';
+    }
+
+    setKnownInputs(prefilledData);
+    console.log("ChatPage Init: Initial knownInputs for chat (after prefill):", JSON.parse(JSON.stringify(prefilledData)));
+    console.log("ChatPage Init: Classification to be sent:", classification);
+
+    handleApiCall('', [], prefilledData, classification, true);
+
+  }, [campaignId, summary, classification, goals, initialMessagingInputs, contextMessagingInputs, knownInputs, toast]);
+
+
+  const handleApiCall = async (userMessage = '', currentHistory, currentLocalKnownInputs, currentClassification, isInitialCall = false) => {
+    if (!campaignId || !currentClassification || !currentLocalKnownInputs) {
+      toast({ variant: "destructive", title: "Error", description: "Cannot make API call: Campaign ID, classification, or inputs are missing." });
+      if (isInitialCall) { setIsInitializingChat(false); setInitializationStatus('error'); }
+      setLoading(false);
+      return;
+    }
+
+    setLoading(true);
+    let newHistory = [...currentHistory];
+    if (userMessage && !isInitialCall) {
+      newHistory = [...newHistory, { role: 'user', content: userMessage }];
+    }
 
     try {
-      console.log("FETCH: Initializing chat, sending to /api/messaging-chat:", payload);
-      const response = await sendMessagingChatMessage(payload);
-      console.log("FETCH: Initial response from /api/messaging-chat:", response);
-
-      if (response.aiMessage) {
-        setConversation([{ role: 'assistant', content: response.aiMessage }]);
-      }
-      if (response.updatedKnownInputs) {
-        updateMessagingInputs(response.updatedKnownInputs);
-      }
-      setCurrentFieldInFocus(response.fieldInFocus || null);
-      setIsComplete(response.isComplete || false);
-      setInitSuccess(true); // Mark as successfully initialized
-
-    } catch (error) {
-      console.error("FETCH ERROR: Error initializing chat:", error);
-      const errorMessage = error.message || "An unknown error occurred during chat initialization.";
-      setInitError(errorMessage); // Set the error message
-      setInitSuccess(false);     // Mark as not successfully initialized
-      toast({
-        variant: "destructive",
-        title: "Error Initializing Chat",
-        description: errorMessage,
+      console.log("ChatPage: Sending to API - knownInputs:", JSON.parse(JSON.stringify(currentLocalKnownInputs)));
+      const response = await sendMessagingChatTurn({
+        campaignId,
+        conversationHistory: newHistory,
+        knownInputs: currentLocalKnownInputs,
+        classification: currentClassification,
       });
-      setConversation([{ role: 'assistant', content: `Sorry, I couldn't start our conversation: ${errorMessage}. Please wait for rate limits to clear and then refresh the page.` }]);
+      console.log("ChatPage: Received from API:", response);
+
+      setConversationHistory(prev => [...prev.filter(m => m.role !== 'error-temp'), { role: 'assistant', content: response.aiMessage }]);
+      setKnownInputs(response.updatedKnownInputs);
+      setCurrentFieldInFocus(response.fieldInFocus);
+
+      if (isInitialCall) {
+        setInitializationStatus('success');
+        if (response.isComplete) {
+            setIsChatComplete(true);
+        }
+      } else if (response.isComplete) {
+        setIsChatComplete(true);
+      }
+
+    } catch (err) {
+      const errorMessage = err.message || 'Failed to get a response from the assistant.';
+      toast({ variant: "destructive", title: "Chat API Error", description: errorMessage });
+      setConversationHistory(prevHistory => [...prevHistory, { role: 'assistant', content: `Error communicating with assistant: ${errorMessage}` }]);
+      if (isInitialCall) setInitializationStatus('error');
     } finally {
-      setIsInitializing(false); // Done initializing (either success or fail)
-    }
-  }, [campaignId, summary, goals, messagingInputs, contextInitialMessagingInputs, updateMessagingInputs, toast]); // Keep dependencies for useCallback's own definition
-
-  useEffect(() => {
-    console.log("EFFECT: Checking conditions for initializeChat", { campaignId, initAttempted, isInitializing, initSuccess, initError });
-    if (campaignId && !initAttempted && !isInitializing) {
-      // Only attempt to initialize if:
-      // - campaignId is present
-      // - An attempt hasn't been made yet (initAttempted is false)
-      // - Not already in the process of initializing (isInitializing is false)
-      console.log("EFFECT: Conditions MET. Calling initializeChat.");
-      setInitAttempted(true); // Mark that an attempt is being made *NOW*
-      setIsInitializing(true); // Set loading state for this attempt
-      initializeChat();
-    } else {
-      console.log("EFFECT: Conditions NOT MET. Not calling initializeChat.");
-    }
-    // Key dependencies that define *when* to check if we *should* run initializeChat.
-    // initializeChat itself is memoized, so its reference only changes if its own deps change.
-    // We want this effect to run if campaignId appears, or if our attempt/success/loading states change in a way that might warrant a *single* new attempt.
-    // The crucial part is `!initAttempted`. Once true, this effect won't call initializeChat again.
-  }, [campaignId, initAttempted, isInitializing, initializeChat]);
-
-
-  const handleSendMessage = async (e) => {
-    e.preventDefault();
-    // Can only send messages if initialization was successful and not currently loading/complete
-    if (!currentUserMessage.trim() || isLoading || isComplete || !initSuccess || isInitializing) return;
-
-    const newUserMessage = { role: 'user', content: currentUserMessage.trim() };
-    // Important: Use a functional update for setConversation if new state depends on old
-    setConversation(prevConversation => [...prevConversation, newUserMessage]);
-    setCurrentUserMessage('');
-    setIsLoading(true); // Loading for user's message, distinct from isInitializing
-
-    // Ensure messagingInputs is up-to-date before sending
-    const currentMessagingInputs = messagingInputs || contextInitialMessagingInputs || {};
-
-    const payload = {
-      campaignId,
-      // Pass the updated conversation immediately
-      conversationHistory: [...conversation, newUserMessage], 
-      knownInputs: currentMessagingInputs,
-    };
-
-    try {
-      console.log("SEND: Sending message to /api/messaging-chat:", payload);
-      const response = await sendMessagingChatMessage(payload);
-      console.log("SEND: Response from /api/messaging-chat:", response);
-
-      if (response.aiMessage) {
-        setConversation(prev => [...prev, { role: 'assistant', content: response.aiMessage }]);
-      }
-      if (response.updatedKnownInputs) {
-        updateMessagingInputs(response.updatedKnownInputs);
-      }
-      setCurrentFieldInFocus(response.fieldInFocus || null);
-      setIsComplete(response.isComplete || false);
-
-      if (response.isComplete) {
-        toast({
-          title: "Information Complete!",
-          description: "We've gathered all the necessary details for the messaging guide.",
-        });
-      }
-
-    } catch (error) {
-      console.error("SEND ERROR: Error sending message:", error);
-      const errorMessage = error.message || "An unknown error occurred while sending the message.";
-      toast({ variant: "destructive", title: "Chat Error", description: errorMessage });
-      setConversation(prev => [...prev, { role: 'assistant', content: `Sorry, I encountered an issue: ${errorMessage}` }]);
-    } finally {
-      setIsLoading(false);
+      setLoading(false);
+      if (isInitialCall) setIsInitializingChat(false);
+      setUserInput('');
     }
   };
-  
-  // Display loading indicator for initial chat setup
-  if (isInitializing && !initError && !conversation.length) {
+
+  useEffect(() => {
+    if (isChatComplete && knownInputs) {
+      console.log("ChatPage: Chat complete! Final local knownInputs:", JSON.parse(JSON.stringify(knownInputs)));
+      updateMessagingInputs(knownInputs);
+
+      const saveFinalData = async () => {
+        if (!campaignId || !summary || !classification || !goals) {
+            toast({ variant: "destructive", title: "Save Error", description: "Core campaign data missing, cannot save final messaging inputs." });
+            console.error("ChatPage Save Error: Core context data missing for final save.", {campaignId, summary, classification, goals});
+            return;
+        }
+        console.log("ChatPage: Attempting to save final messaging inputs to Firestore via context...");
+        // Ensure all parts are correctly passed for the save
+        const dataToSave = {
+            campaignId, // Use current campaignId from context for identifying the document
+            summary,
+            classification,
+            goals,
+            messaging_inputs: knownInputs // Pass the final collected knownInputs
+        };
+        await saveCurrentCampaignState("Messaging Chat Completed", dataToSave);
+      };
+      saveFinalData();
+    }
+  }, [isChatComplete, knownInputs, updateMessagingInputs, saveCurrentCampaignState, campaignId, summary, classification, goals, toast]);
+
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    if (!userInput.trim() || loading || isChatComplete) return;
+
+    const currentMessage = { role: 'user', content: userInput.trim() };
+    setConversationHistory(prev => [...prev, currentMessage]);
+    handleApiCall(userInput.trim(), [...conversationHistory, currentMessage], knownInputs, classification);
+  };
+
+  if (isInitializingChat && initializationStatus === 'pending') {
     return (
-        <div className="p-6 max-w-3xl mx-auto text-center">
-            <Card>
-                <CardHeader><CardTitle>Initializing Chat...</CardTitle></CardHeader>
-                <CardContent><p>Please wait while we connect to the assistant.</p><p className="text-sm text-gray-500 mt-2">(Assistant is typing...)</p></CardContent>
-            </Card>
-        </div>
+      <div className="container py-8 max-w-3xl mx-auto text-center">
+        <Card><CardHeader><CardTitle>Initializing Messaging Assistant...</CardTitle></CardHeader>
+          <CardContent><p>Loading campaign data and preparing the chat. Please wait.</p></CardContent>
+        </Card>
+      </div>
     );
   }
-  
-  // Display error message if initialization failed and no conversation has started
-  // This takes precedence if both initError and isInitializing might be true briefly
-  if (initError && !initSuccess && conversation.length === 1 && conversation[0].role === 'assistant' && conversation[0].content.startsWith("Sorry, I couldn't start")) {
-    // If the only message is our canned error message from init failure
-  } else if (initError && !initSuccess) { // A more general init error display if conversation is empty
-      return (
-          <div className="p-6 max-w-3xl mx-auto text-center">
-              <Card>
-                  <CardHeader><CardTitle className="text-red-600">Chat Initialization Failed</CardTitle></CardHeader>
-                  <CardContent>
-                      <p>{initError}</p>
-                      <p className="mt-2 text-sm text-gray-600">Please check your API key, rate limits, and then refresh the page to try again.</p>
-                      <Button onClick={() => window.location.reload()} className="mt-4">Refresh Page</Button>
-                  </CardContent>
-              </Card>
-          </div>
-      );
+
+  if (initializationStatus === 'error' && (!conversationHistory || conversationHistory.length === 0)) {
+    return (
+      <div className="container py-8 max-w-3xl mx-auto text-center">
+        <Card>
+          <CardHeader><CardTitle>Initialization Failed</CardTitle></CardHeader>
+          <CardContent>
+            <p className="text-red-600">Could not initialize the chat. Essential campaign data might be missing or an error occurred. Please ensure previous steps are complete and try refreshing.</p>
+            <Button onClick={() => navigate(-1)} className="mt-4">Go Back</Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
   }
 
-
-  if (!campaignId && !isInitializing) { // Check isInitializing to avoid flicker if campaignId is briefly null
+   if (!campaignId || (initializationStatus !== 'success' && !knownInputs && !isInitializingChat) ) {
+     console.warn("ChatPage Render: Critical data missing for chat page.", { campaignId, initializationStatus, knownInputs, isInitializingChat});
     return (
-      <div className="p-6 max-w-xl mx-auto text-center">
-        <Card><CardHeader><CardTitle>Error</CardTitle></CardHeader>
-          <CardContent><p>No active campaign found. Please start a new campaign.</p>
-            <Button onClick={() => navigate('/app/campaign/new')} className="mt-4">Start New Campaign</Button>
+      <div className="p-6 max-w-xl mx-auto">
+        <Card>
+          <CardHeader><CardTitle>Error Loading Chat Data</CardTitle></CardHeader>
+          <CardContent>
+            <p>Critical campaign data for the chat is missing or failed to initialize. Please try returning to the dashboard or restarting the campaign setup.</p>
+            <Button onClick={() => navigate('/app/dashboard')} className="mt-4">Go to Dashboard</Button>
           </CardContent>
         </Card>
       </div>
@@ -245,53 +235,61 @@ const MessagingDevelopmentChatPage = () => {
   }
 
   return (
-    <div className="p-4 md:p-6 max-w-3xl mx-auto flex flex-col h-[calc(100vh-100px)]">
-      <Card className="flex-grow flex flex-col">
+    <div className="container py-8 flex flex-col h-[calc(100vh-150px)] max-h-[800px]">
+      <Card className="max-w-3xl mx-auto flex flex-col flex-grow w-full">
         <CardHeader>
-          <CardTitle className="text-2xl">Develop Messaging (AI Chat)</CardTitle>
-          <CardDescription>
-            Let's gather the info for your messaging guide. Campaign ID: {campaignId}
-            {currentFieldInFocus && !isComplete && <span className="block text-sm text-blue-600">I'm currently asking about: {currentFieldInFocus.replace("audienceProfile.", "Audience ").replace("deliveryContext.", "Delivery ")}</span>}
-          </CardDescription>
+          <CardTitle>Develop Messaging Guide - AI Chat</CardTitle>
+          {/* THIS IS WHERE THE ERROR OCCURRED (Line 242 approx) */}
+          <p className="text-sm text-muted-foreground">
+            Chat with the AI to refine the key details for your messaging.
+            {currentFieldInFocus && !isChatComplete && (
+              <span className="block text-xs font-semibold text-blue-600 mt-1">AI is focusing on: {ALL_POTENTIAL_KEYS_WITH_FRIENDLY_NAMES[currentFieldInFocus] || currentFieldInFocus}</span>
+            )}
+          </p>
         </CardHeader>
-        <CardContent className="flex-grow flex flex-col overflow-hidden">
-          <ScrollArea className="flex-grow mb-4 pr-4" ref={chatContainerRef}>
-            {/* Display canned init error message if it's the only message */}
-            {conversation.map((msg, index) => (
-              <div key={index} className={`mb-3 p-3 rounded-lg max-w-[85%] ${
-                msg.role === 'user' ? 'bg-blue-500 text-white ml-auto' : msg.content.startsWith("Sorry, I couldn't start") ? 'bg-red-100 text-red-700 mr-auto' : 'bg-gray-200 text-gray-800 mr-auto'
-              }`}>
-                <p className="text-sm whitespace-pre-wrap">{msg.content}</p>
-              </div>
+        <ScrollArea className="flex-grow p-4">
+          <CardContent className="space-y-4">
+            {conversationHistory.map((msg, idx) => (
+              <Card key={idx} className={`max-w-[85%] ${msg.role === 'user' ? 'ml-auto bg-primary text-primary-foreground' : 'mr-auto bg-muted'}`}>
+                <CardContent className="p-3">
+                  <p className="text-sm whitespace-pre-wrap">{msg.content}</p>
+                </CardContent>
+              </Card>
             ))}
-            {/* Show "Assistant is typing..." only when user is waiting for a reply, not during initial load error */}
-            {isLoading && !isInitializing && initSuccess && <div className="mb-3 p-3 rounded-lg max-w-[85%] bg-gray-200 text-gray-800 mr-auto"><p className="text-sm italic">Assistant is typing...</p></div>}
-          </ScrollArea>
+            <div ref={messagesEndRef} />
+          </CardContent>
+        </ScrollArea>
 
-          {isComplete ? (
-            <div className="text-center p-4 border-t">
-              <p className="text-green-600 font-semibold mb-3">All information has been collected!</p>
-              <Button onClick={() => navigate('/app/campaign/message')}>Proceed to Generate Messaging Guide</Button>
-            </div>
-          ) : (
-            <form onSubmit={handleSendMessage} className="flex items-center gap-2 border-t pt-4">
-              <Input
-                type="text"
-                placeholder={!initSuccess ? "Chat not initialized..." : "Your response..."}
-                value={currentUserMessage}
-                onChange={(e) => setCurrentUserMessage(e.target.value)}
-                disabled={isLoading || isComplete || isInitializing || !initSuccess}
-                className="flex-grow"
+        {!isChatComplete && (
+          <div className="p-4 border-t">
+            <form onSubmit={handleSubmit} className="flex items-center gap-2">
+              <Textarea
+                value={userInput}
+                onChange={(e) => setUserInput(e.target.value)}
+                // AND HERE
+                placeholder={loading ? "Assistant is thinking..." : (currentFieldInFocus ? `Your thoughts on: ${ALL_POTENTIAL_KEYS_WITH_FRIENDLY_NAMES[currentFieldInFocus] || currentFieldInFocus}?` : "Type your reply...")}
+                rows={2}
+                className="flex-grow resize-none"
+                disabled={loading || isChatComplete}
+                onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSubmit(e); } }}
               />
-              <Button type="submit" disabled={isLoading || isComplete || isInitializing || !initSuccess || !currentUserMessage.trim()} size="icon">
-                <SendHorizonal className="h-5 w-5" />
+              <Button type="submit" disabled={loading || !userInput.trim() || isChatComplete}>
+                {loading ? 'Sending...' : 'Send'}
               </Button>
             </form>
-          )}
-        </CardContent>
+          </div>
+        )}
+
+        {isChatComplete && (
+          <div className="p-4 text-center border-t">
+            <p className="text-green-600 font-semibold">✅ All necessary information has been collected!</p>
+            <p className="text-sm text-muted-foreground mt-1">Your messaging inputs have been saved. You can now proceed to generate your full messaging guide.</p>
+            <Button onClick={() => navigate(`/app/campaign/${campaignId}/messaging-guide`)} className="mt-4">
+              Generate Messaging Guide
+            </Button>
+          </div>
+        )}
       </Card>
     </div>
   );
-};
-
-export default MessagingDevelopmentChatPage;
+}

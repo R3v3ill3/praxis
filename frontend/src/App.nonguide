@@ -9,7 +9,7 @@ import Signup from './pages/Signup';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 
-// Onboarding Pages
+// Onboarding Pages (ensure these components are correctly imported)
 import OnboardingChat from './pages/OnboardingChat';
 import OnboardingSummary from './pages/OnboardingSummary';
 
@@ -24,11 +24,10 @@ import CampaignNextStepsPage from './pages/CampaignNextSteps';
 
 // Other Campaign Related Pages
 import CampaignPlan from './pages/CampaignPlan';
-// import CampaignMessagingGuide from './pages/CampaignMessagingGuide'; // Old one, if different
+import CampaignMessagingGuide from './pages/CampaignMessagingGuide';
+import CampaignReviewSave from './pages/CampaignReviewSave';
 import ContentGenerator from './pages/ContentGenerator';
 import MessagingDevelopmentChatPage from './pages/MessagingDevelopmentChatPage';
-import MessagingGuidePage from './pages/MessagingGuidePage'; // <<< IMPORT THE NEW PAGE
-import CampaignReviewSave from './pages/CampaignReviewSave';
 
 // Simple ProtectedRoute component
 const ProtectedRoute = ({ children }) => {
@@ -54,39 +53,27 @@ export default function App() {
         <Route path="/signup" element={<Signup />} />
         <Route path="/login" element={<Login />} />
 
-        {/* Onboarding */}
+        {/* Onboarding - ADD THESE PROTECTED (or public if signup flow needs them before login) */}
+        {/* If onboarding happens *after* signup but *before* full dashboard access,
+            they might not need ProtectedRoute or a different kind of protection.
+            Assuming for now they are protected like other app features: */}
         <Route path="/onboarding" element={<ProtectedRoute><OnboardingChat /></ProtectedRoute>} />
         <Route path="/onboarding/summary" element={<ProtectedRoute><OnboardingSummary /></ProtectedRoute>} />
 
         {/* Protected Routes */}
         <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
         
-        {/* Campaign Creation & Development Flow */}
         <Route path="/app/campaign/new" element={<ProtectedRoute><CampaignBuilder /></ProtectedRoute>} />
         <Route path="/app/campaign/edit-classification" element={<ProtectedRoute><EditClassificationPage /></ProtectedRoute>} />
         <Route path="/app/campaign/confirm-goals" element={<ProtectedRoute><ConfirmGoalsPage /></ProtectedRoute>} />
-        <Route path="/app/ campaigbn/rank-goals" element={<ProtectedRoute><RankGoalsPage /></ProtectedRoute>} />
+        <Route path="/app/campaign/rank-goals" element={<ProtectedRoute><RankGoalsPage /></ProtectedRoute>} />
+        
         <Route path="/app/campaign/next-steps-summary" element={<ProtectedRoute><CampaignNextStepsPage /></ProtectedRoute>} />
         
-        {/* Messaging Development */}
         <Route path="/app/campaign/develop-messaging" element={<ProtectedRoute><MessagingDevelopmentChatPage /></ProtectedRoute>} />
-        {/* The route from MessagingDevelopmentChatPage button:
-          onClick={() => navigate(`/app/campaign/${campaignId}/messaging-guide`)}
-          This needs to match the path below, including the campaignId parameter.
-        */}
-        <Route 
-          path="/app/campaign/:campaignId/messaging-guide" // <<< ADDED THIS ROUTE
-          element={<ProtectedRoute><MessagingGuidePage /></ProtectedRoute>} 
-        />
         
-        {/* Other existing campaign routes */}
         <Route path="/app/campaign/plan" element={<ProtectedRoute><CampaignPlan /></ProtectedRoute>} />
-        {/* <Route path="/app/campaign/message" element={<ProtectedRoute><CampaignMessagingGuide /></ProtectedRoute>} /> */}
-        {/* The above /app/campaign/message route might be an old one.
-            If CampaignMessagingGuide is the same as MessagingGuidePage, you might remove one.
-            For now, I've added the new specific one. Your navigation from the chat page
-            uses /app/campaign/:campaignId/messaging-guide, so that's the one we've added.
-        */}
+        <Route path="/app/campaign/message" element={<ProtectedRoute><CampaignMessagingGuide /></ProtectedRoute>} /> 
         
         <Route path="/campaign/review" element={<ProtectedRoute><CampaignReviewSave /></ProtectedRoute>} /> 
         <Route path="/campaign/content" element={<ProtectedRoute><ContentGenerator /></ProtectedRoute>} />

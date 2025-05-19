@@ -1,0 +1,116 @@
+// frontend/pages/app/campaign/MessagingDevelopmentChatPage.jsx
+import { useState, useEffect, useContext } from 'react';
+import { CampaignContext } from '@/contexts/CampaignContext';
+import { sendMessagingChatTurn } from '@/api/messaging-chat';
+import { Card, CardContent } from '@/components/ui/card';
+import { Textarea } from '@/components/ui/textarea';
+import { Button } from '@/components/ui/button';
+
+export default function MessagingDevelopmentChatPage() {
+  const { campaignId, summary, classification, goals } = useContext(CampaignContext);
+
+  const [conversationHistory, setConversationHistory] = useState([]);
+  const [userInput, setUserInput] = useState('');
+  const [knownInputs, setKnownInputs] = useState({});
+  const [loading, setLoading] = useState(false);
+  const [done, setDone] = useState(false);
+
+  useEffect(() => {
+    if (!campaignId || !summary) return;
+
+    const goalSummary = goals && goals.length > 0
+      ? goals.map(g => g.label).join('; ')
+      : '';
+
+    const initial = {
+      issueName: summary.purpose || '',
+      geographicContext: summary.location || '',
+      proposedChange: goals?.[0]?.label || '',
+      primaryAudience: summary.audience || '',
+      campaignObjective: summary.intent || '',
+      audienceProfile: {
+        demographics: '',
+        psychographics: '',
+        priorBeliefs: '',
+        mediaHabits: ''
+      },
+      deliveryContext: {
+        format: '',
+        messenger: '',
+        timing: ''
+      }
+    };
+    setKnownInputs(initial);
+    handleSend('', [], initial); // trigger initial message
+  }, [campaignId, summary]);
+
+  const handleSend = async (message, history = conversationHistory, inputs = knownInputs) => {
+    setLoading(true);
+
+    const newHistory = message
+      ? [...history, { role: 'user', content: message }]
+      : [...history];
+
+    try {
+      const res = await sendMessagingChatTurn({
+        campaignId,
+        conversationHistory: newHistory,
+        knownInputs: inputs
+      });
+
+      const updatedHistory = [...newHistory, { role: 'assistant', content: res.aiMessage }];
+      setConversationHistory(updatedHistory);
+      setKnownInputs(res.updatedKnownInputs);
+      setDone(res.isComplete);
+      setUserInput('');
+    } catch (err) {
+      console.error('Messaging assistant error', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    if (!userInput.trim()) return;
+    handleSend(userInput.trim());
+  };
+
+  return (
+    <div className="max-w-2xl mx-auto p-6">
+      <h2 className="text-2xl font-bold mb-4">Messaging Assistant</h2>
+      <div className="space-y-4">
+        {conversationHistory.map((msg, idx) => (
+          <Card key={idx} className="border">
+            <CardContent className="p-4">
+              <p className={msg.role === 'user' ? 'text-right' : 'text-left'}>
+                <span className="font-semibold">{msg.role === 'user' ? 'You' : 'Assistant'}:</span> {msg.content}
+              </p>
+            </CardContent>
+          </Card>
+        ))}
+
+        {!done && (
+          <form onSubmit={handleSubmit} className="space-y-2">
+            <Textarea
+              value={userInput}
+              onChange={(e) => setUserInput(e.target.value)}
+              placeholder="Type your reply here..."
+              rows={3}
+              className="w-full"
+            />
+            <Button type="submit" disabled={loading}>
+              {loading ? 'Thinking...' : 'Send'}
+            </Button>
+          </form>
+        )}
+
+        {done && (
+          <div className="text-green-600 font-semibold text-center pt-4">
+            ✅ All necessary info collected. You’re ready to generate your messaging.
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
