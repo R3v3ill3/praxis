@@ -1,0 +1,100 @@
+import express from 'express';
+import OpenAI from 'openai';
+import dotenv from 'dotenv';
+
+dotenv.config();
+
+const router = express.Router();
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+
+router.post('/', async (req, res) => {
+  const {
+    issueName,
+    proposedChange,
+    geographicContext,
+    desiredOutcome,
+    primaryAudience,
+    audienceProfile,
+    campaignObjective,
+    deliveryContext,
+    knownComparisons,
+    benchmarkData
+  } = req.body;
+
+  if (!issueName || !proposedChange || !geographicContext || !desiredOutcome || !primaryAudience || !audienceProfile) {
+    return res.status(400).json({ error: 'Missing required campaign messaging inputs.' });
+  }
+
+  const analysisPrompt = `You are a cognitive linguist. Based on the following campaign context, identify:
+1. Supporting and opposing frames (name + examples)
+2. Schwartz values activated by each
+3. Narrative and linguistic devices
+4. Historical/comparative framing parallels
+5. Predicted oppositional narratives
+6. Messenger and channel sensitivities
+
+Context:
+- Issue: ${issueName}
+- Change: ${proposedChange}
+- Location: ${geographicContext}
+- Outcome: ${desiredOutcome}
+- Audience: ${primaryAudience}
+- Objective: ${campaignObjective || 'not specified'}
+- Comparisons: ${knownComparisons || 'not provided'}
+- Benchmarks: ${benchmarkData || 'none'}
+
+Audience Profile:
+- Demographics: ${audienceProfile.demographics}
+- Psychographics: ${audienceProfile.psychographics}
+- Prior beliefs: ${audienceProfile.priorBeliefs}
+- Media habits: ${audienceProfile.mediaHabits}
+
+Delivery Context:
+- Format: ${deliveryContext?.format}
+- Messenger: ${deliveryContext?.messenger}
+- Timing: ${deliveryContext?.timing}`.trim();
+
+  try {
+    // Stage 1: Analyze
+    const analysisCompletion = await openai.chat.completions.create({
+      model: 'gpt-4o',
+      messages: [{ role: 'system', content: analysisPrompt }],
+      temperature: 0.7
+    });
+    const analysis = analysisCompletion.choices[0].message.content;
+
+    // Stage 2: Synthesize
+    const synthPrompt = `You are a senior communications strategist. Based on the following narrative analysis, generate:
+
+- 1 message using shared values and moral clarity
+- 1 message anchored in identity, pride, and belonging
+- 1 message driving urgency and clear action
+- 1 strong oppositional message using persuasive narrative devices
+
+Then, for each message, create a message matrix:
+- Title
+- Primary Frame
+- Schwartz Values evoked
+- Suggested Format (e.g., video, flyer, post)
+- Efficacy Score (0–100)
+- Risk or Backlash Potential
+- Suggestions to Improve
+
+Narrative Analysis:
+${analysis}`.trim();
+
+    const synthCompletion = await openai.chat.completions.create({
+      model: 'gpt-4o',
+      messages: [{ role: 'system', content: synthPrompt }],
+      temperature: 0.7
+    });
+
+    const messages = synthCompletion.choices[0].message.content;
+    res.json({ analysis, messages });
+  } catch (error) {
+    console.error('❌ Messaging Guide Error:', error);
+    res.status(500).json({ error: 'Failed to generate messaging guide.' });
+  }
+});
+
+export default router;

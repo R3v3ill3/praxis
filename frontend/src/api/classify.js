@@ -34,7 +34,7 @@ export async function classifyCampaign(summaryData) {
 
     // Check if the backend returned a valid match object
     if (data && data.match) {
-       return data.match; // Return just the classification details object
+       return data; // Return just the classification details object
     } else {
        // Handle cases where classification wasn't successful (match: null) but API call was okay
        console.warn("classifyCampaign API call: Classification returned no match. Message:", data?.message);

@@ -1,0 +1,172 @@
+// OnboardingChat.jsx (fully featured)
+import React, { useEffect, useRef, useState } from 'react';
+import { getAuth } from 'firebase/auth';
+import { useNavigate, useLocation } from 'react-router-dom';
+
+export default function OnboardingChat() {
+  const location = useLocation();
+  const [stepIndex, setStepIndex] = useState(location.state?.stepIndex || 0);
+  const [answers, setAnswers] = useState(location.state?.answers || {});
+  const [multiSelect, setMultiSelect] = useState([]);
+  const [awaitingOtherInput, setAwaitingOtherInput] = useState(false);
+  const [otherInput, setOtherInput] = useState('');
+  const scrollRef = useRef(null);
+  const navigate = useNavigate();
+  const auth = getAuth();
+
+  const steps = [
+    {
+      key: 'org_type',
+      question: 'What type of organisation are you?',
+      required: true,
+      options: ['Union', 'NGO', 'Political Party', 'Community Group', 'Social Enterprise', 'Other'],
+    },
+    {
+      key: 'scale',
+      question: 'What is your operational scale?',
+      required: true,
+      options: ['Local', 'Statewide', 'National', 'International', 'Federation with Local Branches', 'Other'],
+    },
+    {
+      key: 'membership_size',
+      question: 'How many members/supporters do you have?',
+      required: false,
+      options: ['<100', '100–1000', '1000–5000', '5000–10,000', '10,000+'],
+    },
+    {
+      key: 'campaign_budget',
+      question: 'Typical campaign budget range?',
+      required: false,
+      options: ['Under $5,000', '$5,000–$20,000', '$20,000–$100,000', 'Over $100,000'],
+    },
+    {
+      key: 'staff_count',
+      question: 'How many paid staff?',
+      required: false,
+      options: ['0', '1–5', '6–20', '21–100', '100+'],
+    },
+    {
+      key: 'volunteer_count',
+      question: 'How many active volunteers?',
+      required: false,
+      options: ['0', '1–10', '11–50', '51–200', '200+'],
+    },
+    {
+      key: 'tech_stack',
+      question: 'Which campaign tools do you use? (Select all that apply, then press Submit)',
+      required: false,
+      multi: true,
+      options: [
+        'Action Network', 'Yabbr', 'NationBuilder', 'Mailchimp', 'Hootsuite',
+        'Canva', 'HubSpot', 'Zoho Campaigns', 'Other',
+      ],
+    },
+  ];
+
+  const currentStep = steps[stepIndex];
+
+  const handleSingleSelect = (value) => {
+    if (value === 'Other') {
+      setAwaitingOtherInput(true);
+    } else {
+      updateAnswer(currentStep.key, value);
+    }
+  };
+
+  const handleOtherSubmit = () => {
+    if (otherInput.trim()) {
+      updateAnswer(currentStep.key, otherInput.trim());
+      setOtherInput('');
+      setAwaitingOtherInput(false);
+    }
+  };
+
+  const handleMultiToggle = (value) => {
+    setMultiSelect(prev =>
+      prev.includes(value) ? prev.filter(v => v !== value) : [...prev, value]
+    );
+  };
+
+  const handleMultiSubmit = () => {
+    const final = multiSelect.includes('Other') && otherInput.trim()
+      ? [...multiSelect.filter(v => v !== 'Other'), otherInput.trim()]
+      : multiSelect;
+    updateAnswer(currentStep.key, final);
+    setMultiSelect([]);
+    setOtherInput('');
+    setAwaitingOtherInput(false);
+  };
+
+  const updateAnswer = (key, value) => {
+    const updated = { ...answers, [key]: value };
+    setAnswers(updated);
+    if (stepIndex + 1 < steps.length) {
+      setStepIndex(stepIndex + 1);
+    } else {
+      navigate('/onboarding/summary', { state: { answers: updated } });
+    }
+  };
+
+  return (
+    <div className="p-4 max-w-xl mx-auto">
+      <h2 className="text-xl font-bold mb-4">Onboarding</h2>
+      <p className="mb-4">{currentStep.question}</p>
+      <div className="space-y-2">
+        {currentStep.multi ? (
+          <>
+            {currentStep.options.map(opt => (
+              <button
+                key={opt}
+                className={`block w-full text-left px-4 py-2 border rounded ${
+                  multiSelect.includes(opt) ? 'bg-blue-600 text-white' : 'bg-gray-100'
+                }`}
+                onClick={() => handleMultiToggle(opt)}
+              >
+                {opt}
+              </button>
+            ))}
+            {multiSelect.includes('Other') && (
+              <input
+                className="w-full mt-2 p-2 border rounded"
+                value={otherInput}
+                onChange={e => setOtherInput(e.target.value)}
+                placeholder="Please specify"
+              />
+            )}
+            <button
+              className="mt-4 px-4 py-2 bg-green-600 text-white rounded"
+              onClick={handleMultiSubmit}
+            >
+              Submit
+            </button>
+          </>
+        ) : awaitingOtherInput ? (
+          <>
+            <input
+              className="w-full p-2 border rounded"
+              value={otherInput}
+              onChange={e => setOtherInput(e.target.value)}
+              placeholder="Please specify"
+            />
+            <button
+              className="mt-2 px-4 py-2 bg-green-600 text-white rounded"
+              onClick={handleOtherSubmit}
+            >
+              Continue
+            </button>
+          </>
+        ) : (
+          currentStep.options.map(opt => (
+            <button
+              key={opt}
+              className="block w-full text-left px-4 py-2 border rounded bg-gray-100 hover:bg-blue-100"
+              onClick={() => handleSingleSelect(opt)}
+            >
+              {opt}
+            </button>
+          ))
+        )}
+      </div>
+    </div>
+  );
+}

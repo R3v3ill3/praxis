@@ -1,0 +1,218 @@
+// frontend/src/pages/MessagingGuidePage.jsx
+import React, { useState, useEffect, useCallback, useContext } from 'react';
+import { useParams, useNavigate, useLocation } from 'react-router-dom'; // Added useLocation
+import { useCampaign } from '../contexts/CampaignContext';
+import { useToast } from '../components/ui/use-toast';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../components/ui/Card';
+import { Button } from '../components/ui/Button';
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { ExternalLink } from 'lucide-react';
+
+// Import your mock scenarios (adjust path as necessary)
+// Ensure this file exists and exports 'mockScenarios'
+// e.g., frontend/src/lib/mock-data.js
+import { mockScenarios } from '../lib/mock-data';
+
+// API function to fetch campaign data with new mock strategy
+async function fetchCampaignDataById(campaignId, selectedMockScenarioKey) {
+  console.log(`Attempting to fetch campaign data for ID: ${campaignId}`);
+
+  // PRIORITY 1: Check for selected predefined mock scenario from query parameter
+  if (selectedMockScenarioKey && mockScenarios && mockScenarios[selectedMockScenarioKey]) {
+    console.warn(`Using PREDEFINED MOCK SCENARIO: '${selectedMockScenarioKey}' from mock-data.js.`);
+    // Return a copy of the mock scenario, ensuring the URL's campaignId is used for the 'id' field
+    return { ...mockScenarios[selectedMockScenarioKey], id: campaignId };
+  }
+
+  // PRIORITY 2: Check localStorage (could be from chat flow OR from a custom mock generator page)
+  const localStorageKey = `campaign-${campaignId}`;
+  if (localStorage.getItem(localStorageKey)) {
+    try {
+      console.log(`Found campaign data in localStorage for key: ${localStorageKey}.`);
+      return JSON.parse(localStorage.getItem(localStorageKey));
+    } catch(e) {
+      console.error(`Error parsing campaign data from localStorage for key ${localStorageKey}. Falling back. Error:`, e);
+    }
+  }
+
+  // PRIORITY 3: Fallback to a default hardcoded mock from mock-data.js if nothing else is found
+  console.warn(`No specific mock scenario requested via query param, and no data in localStorage for '${campaignId}'. Using DEFAULT hardcoded mock from mock-data.js.`);
+  const defaultMock = mockScenarios && mockScenarios.defaultGigWorkers // Assuming 'defaultGigWorkers' is your default key in mock-data.js
+                      ? mockScenarios.defaultGigWorkers
+                      : { // A very basic fallback if mockScenarios or defaultGigWorkers is missing
+                          id: campaignId,
+                          summary: { purpose: "Default Mock Summary"},
+                          classification: { primary_type: "Default Mock Type"},
+                          goals: [],
+                          messaging_inputs: { issueName: 'Default Mock Issue' }
+                        };
+  return { ...defaultMock, id: campaignId }; // Ensure campaignId from URL is used
+}
+
+// API function to generate the messaging guide (remains the same)
+async function generateMessagingGuideApi(campaignDetails) {
+  console.log("LIVE API Call to /api/messaging-guide with details:", campaignDetails);
+  const response = await fetch('/api/messaging-guide', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(campaignDetails),
+  });
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({ error: 'Failed to generate messaging guide. Server returned non-JSON response.' }));
+    throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
+  }
+  return response.json();
+}
+
+export default function MessagingGuidePage() {
+  const { campaignId } = useParams();
+  const navigate = useNavigate();
+  const { toast } = useToast(); // Assumes useToast is fixed and stable
+  const location = useLocation(); // To access query parameters
+
+  const [campaignData, setCampaignData] = useState(null);
+  const [messagingGuide, setMessagingGuide] = useState('');
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  const loadDataAndGenerateGuide = useCallback(async () => {
+    if (!campaignId) {
+      setError("Campaign ID is missing from URL.");
+      setIsLoading(false);
+      if (toast) toast({ variant: "destructive", title: "Error", description: "No Campaign ID found." });
+      if (navigate) navigate('/app/dashboard');
+      return;
+    }
+
+    // Get selected mock scenario key from URL query parameter
+    const queryParams = new URLSearchParams(location.search);
+    const selectedMockKey = queryParams.get('mockScenario');
+
+    console.log(`Attempting to load data and generate guide for campaign ID: ${campaignId}${selectedMockKey ? ` (Using Mock Scenario: ${selectedMockKey})` : ''}.`);
+    setIsLoading(true);
+    setError(null);
+    setMessagingGuide('');
+    setCampaignData(null);
+
+    try {
+      console.log(`Workspaceing full campaign data...`);
+      // Pass the campaignId and the selectedMockKey to fetchCampaignDataById
+      const fetchedData = await fetchCampaignDataById(campaignId, selectedMockKey);
+      setCampaignData(fetchedData);
+      console.log("Full campaign data fetched:", fetchedData);
+
+      if (!fetchedData || !fetchedData.messaging_inputs) {
+        throw new Error("Messaging inputs are missing from the fetched campaign data. Ensure the AI chat step was completed or mock data is sufficient.");
+      }
+
+      const payloadForGuide = { ...fetchedData.messaging_inputs };
+
+      // Basic validation for truly essential fields before calling API
+      if (!payloadForGuide.issueName || !payloadForGuide.proposedChange || !payloadForGuide.primaryAudience) {
+          console.error("Payload for guide generation is missing some core fields:", payloadForGuide);
+          throw new Error("Core data (issue, proposed change, primary audience) for generating the guide is missing.");
+      }
+      console.log("Payload being sent to /api/messaging-guide:", payloadForGuide);
+
+      const guideResult = await generateMessagingGuideApi(payloadForGuide);
+
+      if (guideResult && guideResult.messagingGuide) {
+        setMessagingGuide(guideResult.messagingGuide);
+        if (toast) toast({ title: "Success", description: "Messaging guide generated!" });
+      } else {
+        console.warn("Messaging guide generation may have succeeded but content is empty or missing.");
+        setMessagingGuide('');
+        if (toast) toast({ variant: "default", title: "Notice", description: "Guide generated, but no content was returned from the AI." });
+      }
+
+    } catch (err) {
+      console.error("Error in MessagingGuidePage during data load or guide generation:", err);
+      setError(err.message || "An unexpected error occurred.");
+      if (toast) toast({ variant: "destructive", title: "Error", description: err.message });
+    } finally {
+      setIsLoading(false);
+      console.log("loadDataAndGenerateGuide finished.");
+    }
+  }, [campaignId, navigate, toast, location.search]); // Added location.search as dependency
+
+  useEffect(() => {
+    loadDataAndGenerateGuide();
+  }, [loadDataAndGenerateGuide]);
+
+  // --- UI Rendering (remains the same as your last "good" version) ---
+  if (isLoading) {
+    return (
+      <div className="container mx-auto p-6 text-center">
+        <Card className="max-w-2xl mx-auto">
+          <CardHeader><CardTitle>Loading & Generating Guide...</CardTitle></CardHeader>
+          <CardContent><p>Please wait while we fetch campaign details and generate your messaging guide. This may take a moment.</p></CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="container mx-auto p-6">
+        <Alert variant="destructive" className="max-w-2xl mx-auto">
+          <ExternalLink className="h-4 w-4" />
+          <AlertTitle>Error Encountered</AlertTitle>
+          <AlertDescription>{error}</AlertDescription>
+          <div className="mt-4 space-x-2">
+            <Button onClick={loadDataAndGenerateGuide}>
+              Retry
+            </Button>
+            <Button variant="outline" onClick={() => navigate(`/app/campaign/${campaignId}/develop-messaging`)}>
+              Edit Messaging Inputs (Chat)
+            </Button>
+            <Button variant="outline" onClick={() => navigate('/app/dashboard')}>
+              Go to Dashboard
+            </Button>
+          </div>
+        </Alert>
+      </div>
+    );
+  }
+
+  if (!messagingGuide && !isLoading && !error) {
+    return (
+      <div className="container mx-auto p-6 text-center">
+         <Card className="max-w-2xl mx-auto">
+          <CardHeader><CardTitle>Messaging Guide</CardTitle></CardHeader>
+          <CardContent>
+            <p>No messaging guide content is available. This could be because the generation process didn't produce a guide, or there was an issue that resolved without producing content.</p>
+            <div className="mt-4 space-x-2">
+                <Button onClick={loadDataAndGenerateGuide}>
+                    Try Generating Again
+                </Button>
+                <Button variant="outline" onClick={() => navigate(`/app/campaign/${campaignId}/develop-messaging`)}>
+                    Go Back to Chat
+                </Button>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  return (
+    <div className="container mx-auto p-4 md:p-6">
+      <Card className="max-w-4xl mx-auto">
+        <CardHeader>
+          <CardTitle className="text-2xl md:text-3xl">Your Messaging Guide</CardTitle>
+          {campaignData?.summary?.purpose && (
+            <CardDescription>For campaign: {campaignData.summary.purpose}</CardDescription>
+          )}
+        </CardHeader>
+        <CardContent>
+          <div className="prose prose-lg max-w-none whitespace-pre-wrap">
+            {messagingGuide}
+          </div>
+          <div className="mt-8 text-center">
+            <Button onClick={() => navigate('/app/dashboard')} variant="outline">Back to Dashboard</Button>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}

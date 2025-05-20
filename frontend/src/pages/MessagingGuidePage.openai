@@ -1,0 +1,120 @@
+// Updated MessagingGuidePage.jsx
+import React, { useState } from 'react';
+
+export default function MessagingGuidePage() {
+  const [formData, setFormData] = useState({
+    issueName: '',
+    proposedChange: '',
+    geographicContext: '',
+    desiredOutcome: '',
+    primaryAudience: '',
+    campaignObjective: '',
+    knownComparisons: '',
+    benchmarkData: '',
+    audienceProfile: {
+      demographics: '',
+      psychographics: '',
+      priorBeliefs: '',
+      mediaHabits: ''
+    },
+    deliveryContext: {
+      format: '',
+      messenger: '',
+      timing: ''
+    }
+  });
+
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+  const [analysis, setAnalysis] = useState('');
+  const [messages, setMessages] = useState('');
+
+  const handleChange = (e) => {
+    const { name, value } = e.target;
+
+    if (name.includes('.')) {
+      const [section, key] = name.split('.');
+      setFormData((prev) => ({
+        ...prev,
+        [section]: {
+          ...prev[section],
+          [key]: value
+        }
+      }));
+    } else {
+      setFormData((prev) => ({ ...prev, [name]: value }));
+    }
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setLoading(true);
+    setError(null);
+    setAnalysis('');
+    setMessages('');
+
+    try {
+      const res = await fetch('/api/messaging-guide2', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(formData)
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Unknown error');
+
+      setAnalysis(data.analysis);
+      setMessages(data.messages);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="p-6 max-w-4xl mx-auto">
+      <h1 className="text-2xl font-bold mb-4">Messaging Guide Generator</h1>
+
+      <form onSubmit={handleSubmit} className="space-y-4">
+        <input name="issueName" placeholder="Issue name" onChange={handleChange} className="w-full p-2 border" />
+        <input name="proposedChange" placeholder="Proposed change" onChange={handleChange} className="w-full p-2 border" />
+        <input name="geographicContext" placeholder="Geographic context" onChange={handleChange} className="w-full p-2 border" />
+        <input name="desiredOutcome" placeholder="Desired outcome" onChange={handleChange} className="w-full p-2 border" />
+        <input name="primaryAudience" placeholder="Primary audience" onChange={handleChange} className="w-full p-2 border" />
+        <input name="campaignObjective" placeholder="Campaign objective" onChange={handleChange} className="w-full p-2 border" />
+        <input name="knownComparisons" placeholder="Known comparisons" onChange={handleChange} className="w-full p-2 border" />
+        <input name="benchmarkData" placeholder="Benchmark data" onChange={handleChange} className="w-full p-2 border" />
+
+        <input name="audienceProfile.demographics" placeholder="Audience demographics" onChange={handleChange} className="w-full p-2 border" />
+        <input name="audienceProfile.psychographics" placeholder="Audience psychographics" onChange={handleChange} className="w-full p-2 border" />
+        <input name="audienceProfile.priorBeliefs" placeholder="Audience prior beliefs" onChange={handleChange} className="w-full p-2 border" />
+        <input name="audienceProfile.mediaHabits" placeholder="Audience media habits" onChange={handleChange} className="w-full p-2 border" />
+
+        <input name="deliveryContext.format" placeholder="Delivery format" onChange={handleChange} className="w-full p-2 border" />
+        <input name="deliveryContext.messenger" placeholder="Delivery messenger" onChange={handleChange} className="w-full p-2 border" />
+        <input name="deliveryContext.timing" placeholder="Delivery timing" onChange={handleChange} className="w-full p-2 border" />
+
+        <button type="submit" disabled={loading} className="px-4 py-2 bg-blue-600 text-white">
+          {loading ? 'Generating…' : 'Generate Messaging Guide'}
+        </button>
+      </form>
+
+      {error && <div className="text-red-600 mt-4">❌ {error}</div>}
+
+      {analysis && (
+        <div className="mt-6">
+          <h2 className="text-xl font-semibold">Narrative & Frame Analysis</h2>
+          <pre className="whitespace-pre-wrap bg-gray-100 p-4 border mt-2">{analysis}</pre>
+        </div>
+      )}
+
+      {messages && (
+        <div className="mt-6">
+          <h2 className="text-xl font-semibold">Generated Messages</h2>
+          <pre className="whitespace-pre-wrap bg-gray-100 p-4 border mt-2">{messages}</pre>
+        </div>
+      )}
+    </div>
+  );
+}

@@ -29,6 +29,7 @@ import ContentGenerator from './pages/ContentGenerator';
 import MessagingDevelopmentChatPage from './pages/MessagingDevelopmentChatPage';
 import MessagingGuidePage from './pages/MessagingGuidePage'; // <<< IMPORT THE NEW PAGE
 import CampaignReviewSave from './pages/CampaignReviewSave';
+import MockScenarioGeneratorPage from './pages/MockScenarioGeneratorPage';
 
 // Simple ProtectedRoute component
 const ProtectedRoute = ({ children }) => {
@@ -65,7 +66,7 @@ export default function App() {
         <Route path="/app/campaign/new" element={<ProtectedRoute><CampaignBuilder /></ProtectedRoute>} />
         <Route path="/app/campaign/edit-classification" element={<ProtectedRoute><EditClassificationPage /></ProtectedRoute>} />
         <Route path="/app/campaign/confirm-goals" element={<ProtectedRoute><ConfirmGoalsPage /></ProtectedRoute>} />
-        <Route path="/app/ campaigbn/rank-goals" element={<ProtectedRoute><RankGoalsPage /></ProtectedRoute>} />
+        <Route path="/app/campaign/rank-goals" element={<ProtectedRoute><RankGoalsPage /></ProtectedRoute>} />
         <Route path="/app/campaign/next-steps-summary" element={<ProtectedRoute><CampaignNextStepsPage /></ProtectedRoute>} />
         
         {/* Messaging Development */}
@@ -79,6 +80,10 @@ export default function App() {
           element={<ProtectedRoute><MessagingGuidePage /></ProtectedRoute>} 
         />
         
+        <Route
+          path="/app/dev/scenario" // Or any path you prefer
+          element={<ProtectedRoute><MockScenarioGeneratorPage /></ProtectedRoute>}
+        />
         {/* Other existing campaign routes */}
         <Route path="/app/campaign/plan" element={<ProtectedRoute><CampaignPlan /></ProtectedRoute>} />
         {/* <Route path="/app/campaign/message" element={<ProtectedRoute><CampaignMessagingGuide /></ProtectedRoute>} /> */}

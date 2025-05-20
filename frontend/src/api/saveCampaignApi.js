@@ -4,7 +4,7 @@ export async function saveCampaignProgress(currentCampaignId, data) {
   try {
     const payload = {
       ...data, // This should contain summary, classification, goals from CampaignContext
-      id: currentCampaignId, // Send the currentCampaignId as 'id' in the payload.
+      campaignId: currentCampaignId, // Send the currentCampaignId as 'id' in the payload.
                             // Backend will use this 'id' or generate one if it's null/undefined.
     };
 

@@ -48,15 +48,15 @@ export function EditClassificationPage() {
       return <p>Error: Campaign context loading or unavailable. Please try refreshing or starting over.</p>;
   }
   
-  const { summary, classification, classificationGuess, updateClassification, saveCurrentCampaignState, campaignId, goals: contextGoals } = campaignCtx;
+  const { summary, classification, classificationGuess, updateClassificationContext, saveCurrentCampaignState, campaignId, goals: contextGoals } = campaignCtx;
 
   const handleNext = useCallback(async (updatedClassificationFromForm) => {
     console.log("EditClassificationPage: handleNext called with form data:", updatedClassificationFromForm);
-    if (!checkContextFunctions(campaignCtx, ['updateClassification', 'saveCurrentCampaignState'])) {
+    if (!checkContextFunctions(campaignCtx, ['updateClassificationContext', 'saveCurrentCampaignState'])) {
       toast({ variant: "destructive", title: "Context Error", description: "Critical context functions are missing." }); return;
     }
     
-    updateClassification(updatedClassificationFromForm); // Update context state for classification
+    updateClassificationContext(updatedClassificationFromForm); // Update context state for classification
 
     if (!summary || !contextGoals) { // Ensure summary and goals (from context) are present for the save payload
       console.error("EditClassificationPage: Attempting to save, but summary or contextGoals are missing from context.", { summary, contextGoals });
@@ -73,7 +73,7 @@ export function EditClassificationPage() {
     }
     console.log("EditClassificationPage: Save successful, navigating to confirm-goals.");
     navigate('/app/campaign/confirm-goals');
-  }, [campaignCtx, summary, updateClassification, saveCurrentCampaignState, campaignId, contextGoals, navigate, toast]);
+  }, [campaignCtx, summary, updateClassificationContext, saveCurrentCampaignState, campaignId, contextGoals, navigate, toast]);
 
   const classificationForEditor = classification || classificationGuess || null;
   return <EditCampaignClassificationComponent initialSummary={summary} initialClassification={classificationForEditor} onNext={handleNext} />;
@@ -100,14 +100,14 @@ export function ConfirmGoalsPage() {
     console.error("ConfirmGoalsPage: CampaignContext is critically unavailable at render.");
     return <p>Error: Campaign context loading or unavailable.</p>;
   }
-  const { summary, classification, goals: contextGoalsFromCtx, updateGoals, saveCurrentCampaignState, campaignId } = campaignCtx;
+  const { summary, classification, goals: contextGoalsFromCtx, updateGoalsContext, saveCurrentCampaignState, campaignId } = campaignCtx;
 
   const handleConfirm = useCallback(async (confirmedGoalsFromForm) => {
     console.log("ConfirmGoalsPage: handleConfirm called with form data:", confirmedGoalsFromForm);
-    if (!checkContextFunctions(campaignCtx, ['updateGoals', 'saveCurrentCampaignState'])) {
+    if (!checkContextFunctions(campaignCtx, ['updateGoalsContext', 'saveCurrentCampaignState'])) {
       toast({ variant: "destructive", title: "Context Error", description: "Critical context functions missing." }); return;
     }
-    updateGoals(confirmedGoalsFromForm); // This updates context.goals
+    updateGoalsContext(confirmedGoalsFromForm); // This updates context.goals
 
     if (!summary || !classification) { // Ensure summary and classification (from context) are present
       console.error("ConfirmGoalsPage: Attempting to save, but summary or classification are missing from context.", { summary, classification });
@@ -124,7 +124,7 @@ export function ConfirmGoalsPage() {
     }
     console.log("ConfirmGoalsPage: Save successful, navigating to rank-goals.");
     navigate('/app/campaign/rank-goals');
-  }, [campaignCtx, summary, classification, updateGoals, saveCurrentCampaignState, campaignId, navigate, toast]);
+  }, [campaignCtx, summary, classification, updateGoalsContext, saveCurrentCampaignState, campaignId, navigate, toast]);
 
   return <ConfirmGoalsComponent initialGoals={contextGoalsFromCtx || []} onConfirm={handleConfirm} />;
 }
@@ -154,15 +154,15 @@ export function RankGoalsPage() {
     return <p>Error: Campaign context loading or unavailable.</p>;
   }
 
-  const { summary, classification, goals: contextGoalsFromCtx, updateGoals, saveCurrentCampaignState, campaignId } = campaignCtx;
+  const { summary, classification, goals: contextGoalsFromCtx, updateGoalsContext, saveCurrentCampaignState, campaignId } = campaignCtx;
 
   const handleRankedAndSave = useCallback(async (finalRankedGoalsFromComponent) => {
     console.log("RankGoalsPage: handleRankedAndSave triggered with finalRankedGoals:", finalRankedGoalsFromComponent);
-    if (!checkContextFunctions(campaignCtx, ['updateGoals', 'saveCurrentCampaignState'])) {
+    if (!checkContextFunctions(campaignCtx, ['updateGoalsContext', 'saveCurrentCampaignState'])) {
       toast({ variant: "destructive", title: "Context Error", description: "Critical context functions missing for ranking save." });
       return;
     }
-    updateGoals(finalRankedGoalsFromComponent);
+    updateGoalsContext(finalRankedGoalsFromComponent);
 
     if (!summary || !classification) {
       console.error("RankGoalsPage: Critical data (summary or classification) missing from context for save.", { summary, classification });
@@ -188,7 +188,7 @@ export function RankGoalsPage() {
     } else {
        toast({ variant: "destructive", title: "Save Failed", description: "Could not save final goal ranking. Please try again." });
     }
-  }, [campaignCtx, summary, classification, updateGoals, saveCurrentCampaignState, campaignId, navigate, toast]);
+  }, [campaignCtx, summary, classification, updateGoalsContext, saveCurrentCampaignState, campaignId, navigate, toast]);
   
   if (!contextGoalsFromCtx || contextGoalsFromCtx.length === 0) {
       console.warn("RankGoalsPage: No goals in context to rank. User might have jumped here or an error occurred previously.");

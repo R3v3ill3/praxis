@@ -4,7 +4,9 @@ import express from 'express';
 import path from 'path';
 import fs from 'fs/promises'; // Using fs.promises for async file reading
 import { fileURLToPath } from 'url';
-import { mapGoalsToCanonical, formatCanonicalGoalsForFirestore } from './goal-mapping.js'; // Ensure this path is correct
+// Ensure goal-mapping.js is primarily used for formatting the response,
+// while this file handles the core classification logic against detailed JSON data.
+import { mapGoalsToCanonical, formatCanonicalGoalsForFirestore } from './goal-mapping.js';
 
 const router = express.Router();
 
@@ -13,218 +15,272 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const dataDir = path.join(__dirname, '..', 'data'); // Assumes data folder is at backend-node/data
 
-// --- Load JSON Data Asynchronously ---
-let campaignData = {
-    types: [], subtypes: [], useCases: [], goalsData: [],
-    goalMappings: [],
-    isLoaded: false, loadError: null,
-    typesMap: new Map(), subtypesMap: new Map(), useCasesMap: new Map(),
-    canonicalGoalDetails: new Map(),
-    goalMappingsMap: new Map()
+// --- Global Campaign Data Store ---
+let campaignDataStore = {
+    types: [],
+    subtypes: [],
+    useCases: [],
+    goalsData: [],    // Raw data from campaign_goals.json
+    goalMappings: [], // Raw data from goal_mappings.json
+    isLoaded: false,
+    loadError: null,
+    typesMap: new Map(),           // Map<id, typeObject>
+    subtypesMap: new Map(),        // Map<id, subtypeObject>
+    useCasesMap: new Map(),        // Map<id, useCaseObject>
+    canonicalGoalDetails: new Map(), // Map<goal_id, goalDetailObject> from campaign_goals.json
+    goalMappingsMap: new Map()     // Map<use_case_id, Map<goal_id, rank>> from goal_mappings.json
 };
 
-async function loadData() {
+async function loadAndProcessData() {
     const filesToLoad = [
-        { key: 'types', file: 'campaign_types.json' },
-        { key: 'subtypes', file: 'campaign_subtypes.json' },
-        { key: 'useCases', file: 'campaign_use_cases.json' },
-        { key: 'goalsData', file: 'campaign_goals.json' },
-        { key: 'goalMappings', file: 'goal_mappings.json' },
+        { key: 'types', file: 'campaign_types.json', map: campaignDataStore.typesMap, idField: 'id' },
+        { key: 'subtypes', file: 'campaign_subtypes.json', map: campaignDataStore.subtypesMap, idField: 'id' },
+        { key: 'useCases', file: 'campaign_use_cases.json', map: campaignDataStore.useCasesMap, idField: 'id' },
+        { key: 'goalsData', file: 'campaign_goals.json', map: campaignDataStore.canonicalGoalDetails, idField: 'id' },
+        { key: 'goalMappings', file: 'goal_mappings.json' } // Special handling for goalMappingsMap
     ];
-    try {
-        console.log(`[classify-campaign] INFO: Attempting to load JSON data from ${dataDir}`);
-        const results = await Promise.allSettled(
-            filesToLoad.map(item =>
-                fs.readFile(path.join(dataDir, item.file), 'utf-8').then(JSON.parse)
-            )
-        );
-        let allSucceeded = true;
-        results.forEach((result, index) => {
-            const item = filesToLoad[index];
-            if (result.status === 'fulfilled') {
-                campaignData[item.key] = result.value;
+
+    console.log(`[classify-campaign] INFO: Starting data load from ${dataDir}`);
+    let allSucceeded = true;
+
+    for (const item of filesToLoad) {
+        try {
+            const filePath = path.join(dataDir, item.file);
+            const fileContent = await fs.readFile(filePath, 'utf-8');
+            const jsonData = JSON.parse(fileContent);
+            campaignDataStore[item.key] = jsonData; // Store raw data
+
+            if (item.map && item.idField) { // Populate simple maps
+                if (Array.isArray(jsonData)) {
+                    jsonData.forEach(entry => {
+                        if (entry && entry[item.idField]) {
+                            item.map.set(entry[item.idField], entry);
+                        } else {
+                            console.warn(`[classify-campaign] WARN: Entry in ${item.file} missing '${item.idField}' or is invalid. Entry:`, entry);
+                        }
+                    });
+                    console.log(`[classify-campaign] INFO: Loaded and mapped ${item.map.size} entries from ${item.file} into ${item.key}Map.`);
+                } else {
+                    throw new Error(`${item.file} did not parse into an array.`);
+                }
+            }
+        } catch (err) {
+            allSucceeded = false;
+            campaignDataStore.loadError = err;
+            console.error(`[classify-campaign] ERROR: Failed to load or process ${item.file}:`, err.message, err.stack ? err.stack.split('\n')[1] : '');
+            // If critical files like goalsData or goalMappings fail, classification will be severely impacted.
+            if (item.key === 'goalsData' || item.key === 'goalMappings') {
+                console.error(`[classify-campaign] CRITICAL: Failure with ${item.file} will prevent proper classification.`);
+            }
+        }
+    }
+
+    // Special handling for goalMappingsMap
+    if (allSucceeded && Array.isArray(campaignDataStore.goalMappings)) {
+        campaignDataStore.goalMappings.forEach(mapping => {
+            if (mapping && mapping.use_case_id && Array.isArray(mapping.goals)) {
+                const prioritiesMap = new Map();
+                mapping.goals.forEach(p => {
+                    if (p && p.goal_id && typeof p.priority === 'number') {
+                        prioritiesMap.set(p.goal_id, p.priority);
+                    } else {
+                         console.warn(`[classify-campaign] WARN: Invalid goal_priority entry in goal_mappings.json for use_case_id ${mapping.use_case_id}. Entry:`, p);
+                    }
+                });
+                if (prioritiesMap.size > 0) {
+                    campaignDataStore.goalMappingsMap.set(mapping.use_case_id, prioritiesMap);
+                }
             } else {
-                allSucceeded = false;
-                console.error(`[classify-campaign] ERROR: Failed to load ${item.file}:`, result.reason);
-                campaignData.loadError = campaignData.loadError || result.reason;
+                console.warn(`[classify-campaign] WARN: Invalid mapping entry in goal_mappings.json. Entry:`, mapping);
             }
         });
+        console.log(`[classify-campaign] INFO: Processed ${campaignDataStore.goalMappingsMap.size} entries into goalMappingsMap.`);
+    } else if (allSucceeded && !Array.isArray(campaignDataStore.goalMappings)) {
+        console.error("[classify-campaign] CRITICAL: goal_mappings.json did not parse into an array, but other files succeeded.");
+        allSucceeded = false; // Mark as not fully loaded if this critical part fails
+    }
 
-        if (!allSucceeded) {
-            const goalMappingsFileConfig = filesToLoad.find(item => item.key === 'goalMappings');
-            const loadedGoalMappings = campaignData.goalMappings;
-            if (goalMappingsFileConfig && (!loadedGoalMappings || (Array.isArray(loadedGoalMappings) && loadedGoalMappings.length === 0))) {
-                 console.error(`[classify-campaign] CRITICAL: ${goalMappingsFileConfig.file} failed to load or is empty. Classification depends heavily on this file.`);
-            }
-        }
 
-        // Populate maps (ensure this logic is sound and campaignData fields are populated before use)
-        if(Array.isArray(campaignData.types)) campaignData.types.forEach(t => campaignData.typesMap.set(t.id, t));
-        if(Array.isArray(campaignData.subtypes)) campaignData.subtypes.forEach(st => { /* your subtype mapping logic */ });
-        if(Array.isArray(campaignData.useCases)) campaignData.useCases.forEach(uc => campaignData.useCasesMap.set(uc.id, uc));
-
-        if (Array.isArray(campaignData.goalsData)) {
-            campaignData.goalsData.forEach(g => { /* your canonicalGoalDetails mapping logic */ });
-        } else {
-            console.error('[classify-campaign] CRITICAL: campaign_goals.json data is not an array or is missing.');
-            campaignData.goalsData = [];
-        }
-        // console.log('[classify-campaign] DEBUG: Loaded Canonical Goal Details:', Array.from(campaignData.canonicalGoalDetails.keys()));
-
-        if (Array.isArray(campaignData.goalMappings)) {
-            campaignData.goalMappings.forEach(gm => { /* your goalMappingsMap logic */ });
-        } else {
-            console.error('[classify-campaign] CRITICAL: goal_mappings.json data is not an array or is missing.');
-            campaignData.goalMappings = [];
-        }
-
-        if (allSucceeded) {
-            campaignData.isLoaded = true;
-            campaignData.loadError = null;
-            console.log(`[classify-campaign] INFO: Successfully processed relational JSON data files.`);
-        } else {
-            console.error(`[classify-campaign] ERROR: Not all data files loaded successfully. Classification service might be impaired.`);
-        }
-
-    } catch (err) {
-         campaignData.loadError = err;
-         campaignData.isLoaded = false;
-         console.error(`[classify-campaign] ERROR: Critical failure during data loading or processing:`, err);
+    if (allSucceeded) {
+        campaignDataStore.isLoaded = true;
+        campaignDataStore.loadError = null;
+        console.log(`[classify-campaign] INFO: All campaign data files loaded and processed successfully.`);
+        // console.log('[classify-campaign] DEBUG: Canonical Goal IDs loaded:', Array.from(campaignDataStore.canonicalGoalDetails.keys()));
+        // console.log('[classify-campaign] DEBUG: Use Case IDs in goalMappingsMap:', Array.from(campaignDataStore.goalMappingsMap.keys()));
+    } else {
+        campaignDataStore.isLoaded = false; // Ensure this is false if any step failed
+        console.error(`[classify-campaign] ERROR: Not all data files loaded successfully. Classification service may be impaired.`);
     }
 }
 
-loadData(); // Call loadData to populate campaignData when the module loads
+// Load data when the module is initialized
+loadAndProcessData();
 
-// --- Classification Logic (function classifyCampaign(summary) { ... }) ---
-// (Make sure this function is defined here, using the module-scoped campaignData)
-function classifyCampaign(summary) {
-    // ... your existing, complete classification logic ...
-    // This function will use the campaignData variable from the outer scope.
-    // For example:
-    // if (!campaignData.isLoaded) { console.warn("Data not loaded for classifyCampaign"); return null; }
-    // const bestUseCase = campaignData.useCasesMap.get(bestUseCaseId);
-    // ... etc. ...
+function classifyCampaignByGoals(summaryGoals) {
+    if (!campaignDataStore.isLoaded || campaignDataStore.canonicalGoalDetails.size === 0 || campaignDataStore.goalMappingsMap.size === 0) {
+        console.warn('[classify-campaign] WARN: Classification attempted but data not fully loaded or critical maps are empty.');
+        console.warn(`[classify-campaign] WARN: Details - isLoaded: ${campaignDataStore.isLoaded}, canonicalGoalDetails size: ${campaignDataStore.canonicalGoalDetails.size}, goalMappingsMap size: ${campaignDataStore.goalMappingsMap.size}`);
+        return null;
+    }
+
     const matchedCanonicalGoals = [];
-
-    if (Array.isArray(summary.goals)) {
-        summary.goals.forEach((goalDescription, index) => {
+    if (Array.isArray(summaryGoals)) {
+        summaryGoals.forEach((goalDescription, index) => {
             const goalDescLower = String(goalDescription).toLowerCase().trim();
+            // console.log(`[classify-campaign] DEBUG: Processing user goal for classification: "${goalDescLower}"`);
             let foundMatchForThisDesc = false;
-            for (const [canonId, goalDetail] of campaignData.canonicalGoalDetails.entries()) {
-                if (goalDetail.keywords && goalDetail.keywords.length > 0) {
+            for (const [canonId, goalDetail] of campaignDataStore.canonicalGoalDetails.entries()) {
+                if (goalDetail.keywords && Array.isArray(goalDetail.keywords) && goalDetail.keywords.length > 0) {
                     for (const keyword of goalDetail.keywords) {
                         const keywordPattern = new RegExp(`\\b${keyword.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&')}\\b`, 'i');
                         if (keywordPattern.test(goalDescLower)) {
-                            matchedCanonicalGoals.push({ id: canonId, rank: index + 1 });
+                            // console.log(`[classify-campaign] DEBUG: Match! User goal "${goalDescLower}" matched keyword "${keyword}" for canonical ID "${canonId}"`);
+                            // Ensure we don't add duplicate canonical goals if multiple user goals map to the same one,
+                            // but preserve their original index for potential future ranking tie-breaking (if needed).
+                            if (!matchedCanonicalGoals.some(g => g.id === canonId)) {
+                                matchedCanonicalGoals.push({ id: canonId, originalIndex: index });
+                            }
                             foundMatchForThisDesc = true;
-                            break; 
+                            break; // Found a keyword match for this canonical goal.
                         }
                     }
                 }
-                if (foundMatchForThisDesc) break; 
+                if (foundMatchForThisDesc) break; // Matched this user goal to a canonical goal. Move to next user goal.
             }
-            if (!foundMatchForThisDesc) { /* other matching attempts */ }
             if (!foundMatchForThisDesc) {
-                 console.warn(`[classify-campaign] WARN: User goal description "${goalDescription}" did not match any canonical goal.`);
+                console.warn(`[classify-campaign] WARN: User goal description "${goalDescription}" did not match any canonical goal via keywords.`);
             }
         });
-    }
-    // ... rest of your classifyCampaign logic from the complete file ...
-     if (matchedCanonicalGoals.length === 0) {
+    } else {
+        console.warn('[classify-campaign] WARN: summary.goals is not an array or is missing for classification.');
         return null;
     }
+
+    console.log('[classify-campaign] INFO: Matched canonical goals from summary:', matchedCanonicalGoals);
+
+    if (matchedCanonicalGoals.length === 0) {
+        console.log('[classify-campaign] INFO: No canonical goals were matched from the summary. Cannot classify by goals.');
+        return null;
+    }
+
     let bestUseCaseId = null;
     let highestScore = -1;
-    campaignData.goalMappingsMap.forEach((useCaseGoalPriorities, useCaseId) => {
+
+    campaignDataStore.goalMappingsMap.forEach((useCaseGoalPriorities, useCaseId) => { // useCaseGoalPriorities is a Map<goal_id, rank>
         let currentScore = 0;
-        matchedCanonicalGoals.forEach(userGoal => {
+        let matchedGoalsForThisUseCase = 0;
+        matchedCanonicalGoals.forEach(userGoal => { // userGoal is { id: canonId, originalIndex: index }
             if (useCaseGoalPriorities.has(userGoal.id)) {
-                currentScore += (10 - useCaseGoalPriorities.get(userGoal.id));
+                // Simple scoring: points for matching, more points for higher ranked goals (lower rank number = higher priority)
+                // Max rank is typically 10, so (11 - rank) gives more points to rank 1.
+                currentScore += (11 - useCaseGoalPriorities.get(userGoal.id));
+                matchedGoalsForThisUseCase++;
             }
         });
-        if (currentScore > highestScore) {
+
+        // console.log(`[classify-campaign] DEBUG: Scoring Use Case ID "${useCaseId}": Score = ${currentScore}, Matched Goals = ${matchedGoalsForThisUseCase}`);
+
+        if (matchedGoalsForThisUseCase > 0 && currentScore > highestScore) {
             highestScore = currentScore;
             bestUseCaseId = useCaseId;
         }
+        // Basic tie-breaking: if scores are equal, prefer the one that matched more goals (if implemented)
+        // For now, first one with highest score wins.
     });
-    if (!bestUseCaseId) return null;
-    const bestUseCase = campaignData.useCasesMap.get(bestUseCaseId);
-    if (!bestUseCase) return null;
-    // Simplified logic for brevity, ensure your full logic is here
-    const subtypeForUseCase = String(bestUseCase.subtype_id).toLowerCase().trim();
-    let bestSubtype = null;
-    for(const [id, subtype] of campaignData.subtypesMap.entries()){
-        if(id === subtypeForUseCase || id.split('_').pop() === subtypeForUseCase){
-            bestSubtype = subtype;
-            break;
+
+    if (!bestUseCaseId) {
+        console.log('[classify-campaign] INFO: No use case found based on goal scoring.');
+        return null;
+    }
+
+    const bestUseCase = campaignDataStore.useCasesMap.get(bestUseCaseId);
+    if (!bestUseCase) {
+        console.error(`[classify-campaign] ERROR: Best use case ID "${bestUseCaseId}" found, but no corresponding object in useCasesMap.`);
+        return null;
+    }
+
+    // The subtype_id in campaign_use_cases.json might be the core part (e.g., 'industrial')
+    // or the full ID (e.g., 'union_industrial'). We need to find the matching subtype object.
+    const subtypeIdForUseCase = String(bestUseCase.subtype_id).toLowerCase().trim();
+    let bestSubtype = campaignDataStore.subtypesMap.get(subtypeIdForUseCase);
+
+    if (!bestSubtype) { // Try matching by the core part if full ID didn't match
+        for (const [id, subtype] of campaignDataStore.subtypesMap.entries()) {
+            if (id.endsWith(`_${subtypeIdForUseCase}`) || id === subtypeIdForUseCase) { // More flexible match
+                bestSubtype = subtype;
+                break;
+            }
         }
     }
-    if (!bestSubtype) return null;
-    const bestType = campaignData.typesMap.get(String(bestSubtype.type_id).toLowerCase().trim());
-    if (!bestType) return null;
+
+    if (!bestSubtype) {
+        console.error(`[classify-campaign] ERROR: Use case "${bestUseCase.name}" has subtype_id "${subtypeIdForUseCase}", but no matching subtype found in subtypesMap.`);
+        return null;
+    }
+
+    const bestType = campaignDataStore.typesMap.get(String(bestSubtype.type_id).toLowerCase().trim());
+    if (!bestType) {
+        console.error(`[classify-campaign] ERROR: Subtype "${bestSubtype.name}" has type_id "${bestSubtype.type_id}", but no matching type found in typesMap.`);
+        return null;
+    }
 
     return {
-        id: bestUseCaseId,
+        id: bestUseCaseId, // This is the use_case_id
         primary_type: bestType.name,
         secondary_type: bestSubtype.name,
-        sub_type: bestUseCase.name,
+        sub_type: bestUseCase.name, // This is the use_case name
         type_id: bestType.id,
-        subtype_id: bestSubtype.id,
-        confidence: parseFloat(highestScore.toFixed(2))
+        subtype_id: bestSubtype.id, // This is the full subtype ID
+        confidence_score: parseFloat(highestScore.toFixed(2)) // Or some other metric of confidence
     };
 }
-// --- End Classification Logic ---
-
-
-// DIAGNOSTIC LOG 1 (Correct Placement)
-console.log('[classify-campaign-type] campaignData at module level (after loadData call):', typeof campaignData, campaignData ? `isLoaded: ${campaignData.isLoaded}` : 'campaignData is null/undefined');
 
 // --- Route Handler ---
 router.post('/', async (req, res) => {
-    // DIAGNOSTIC LOG 2 (Correct Placement)
-    console.log('[classify-campaign-type] campaignData at start of route handler:', typeof campaignData, campaignData ? `isLoaded: ${campaignData.isLoaded}` : 'campaignData is null/undefined');
-
     const requestTimestamp = new Date().toISOString();
-    console.log(`[${requestTimestamp}] INFO: Received POST /api/classify-campaign-type`);
+    console.log(`[${requestTimestamp}] INFO: POST /api/classify-campaign-type received.`);
 
-    // This is where the error was reported
-    if (!campaignData.isLoaded) {
-        const loadErrorMessage = campaignData.loadError ? campaignData.loadError.message : "Unknown data loading error";
-        console.error(`[${requestTimestamp}] ERROR: Classification unavailable - data not loaded. Load Error: ${loadErrorMessage}`);
-        return res.status(503).json({ error: 'Classification service temporarily unavailable (data loading error).', details: loadErrorMessage });
+    if (!campaignDataStore.isLoaded) {
+        const loadErrorMessage = campaignDataStore.loadError ? campaignDataStore.loadError.message : "Data not yet loaded or a loading error occurred.";
+        console.error(`[${requestTimestamp}] ERROR: Classification service unavailable. Detail: ${loadErrorMessage}`);
+        // Retry loading if it failed previously and was transient? For now, just report error.
+        // await loadAndProcessData(); // Be cautious with retrying on every request.
+        // if (!campaignDataStore.isLoaded) { ... }
+        return res.status(503).json({ error: 'Classification service temporarily unavailable.', details: loadErrorMessage });
     }
 
     const { summary } = req.body;
-    console.log(`[${requestTimestamp}] [classify-campaign] DEBUG: Received summary for classification:`, JSON.stringify(summary, null, 2));
 
-    if (!summary || typeof summary !== 'object' || /* ... other validation ... */ !Array.isArray(summary.goals)) {
-      console.warn(`[${requestTimestamp}] WARN: Received invalid or incomplete summary object for classification.`);
-      return res.status(400).json({ error: 'Invalid summary object for classification.' });
+    if (!summary || typeof summary !== 'object' || !Array.isArray(summary.goals)) {
+      console.warn(`[${requestTimestamp}] WARN: Received invalid or incomplete summary object for classification. Summary:`, summary);
+      return res.status(400).json({ error: 'Invalid or incomplete summary object for classification. "summary" and "summary.goals" (array) are required.' });
     }
-    console.log(`[${requestTimestamp}] DEBUG: Received summary goals for classification:`, summary.goals);
+    console.log(`[${requestTimestamp}] DEBUG: Received summary for classification:`, JSON.stringify(summary, null, 2));
 
-    const classificationMatch = classifyCampaign(summary); // Uses the module-scoped campaignData
+    const classificationMatch = classifyCampaignByGoals(summary.goals);
 
     let processedGoalsForResponse = [];
-    if (Array.isArray(summary.goals) && summary.goals.length > 0) {
-        try {
-            const canonicalGoalIds = mapGoalsToCanonical(summary.goals);
-            processedGoalsForResponse = formatCanonicalGoalsForFirestore(canonicalGoalIds);
-            console.log(`[${requestTimestamp}] INFO: Successfully processed goals:`, processedGoalsForResponse);
-        } catch (goalMappingError) {
-            console.error(`[${requestTimestamp}] ERROR: Failed to map goals during classification:`, goalMappingError);
-        }
+    // The mapGoalsToCanonical from goal-mapping.js uses a simpler synonym list.
+    // This is fine for providing a quick canonical version of goals in the response,
+    // but the classification logic above should rely on the richer keyword data from campaign_goals.json.
+    try {
+        const canonicalGoalIdsFromSynonyms = mapGoalsToCanonical(summary.goals);
+        processedGoalsForResponse = formatCanonicalGoalsForFirestore(canonicalGoalIdsFromSynonyms);
+        console.log(`[${requestTimestamp}] INFO: Goals processed for response (using goal-mapping.js synonyms):`, processedGoalsForResponse);
+    } catch (goalMappingError) {
+        console.error(`[${requestTimestamp}] ERROR: Failed to map goals for response using goal-mapping.js:`, goalMappingError);
+        // Continue without processed_goals in response if this fails, classificationMatch is more important.
     }
 
     if (!classificationMatch) {
-      console.log(`[${requestTimestamp}] INFO: Classification result: No match found.`);
-      return res.status(200).json({
+      console.log(`[${requestTimestamp}] INFO: Classification result: No programmatic match found based on goals.`);
+      return res.status(200).json({ // Still 200, but with match: null
         match: null,
         message: 'Could not classify campaign type based on provided summary goals.',
-        processed_goals: processedGoalsForResponse
+        processed_goals: processedGoalsForResponse // Send back goals processed by simpler synonym matching
       });
     } else {
-      console.log(`[${requestTimestamp}] INFO: Classification result: Match found - Type: ${classificationMatch.primary_type}, SubType: ${classificationMatch.secondary_type}, UseCase: ${classificationMatch.sub_type}, Confidence: ${classificationMatch.confidence}`);
+      console.log(`[${requestTimestamp}] INFO: Classification result: Match found - Type: ${classificationMatch.primary_type}, SubType: ${classificationMatch.secondary_type}, UseCase: ${classificationMatch.sub_type}, Score: ${classificationMatch.confidence_score}`);
       return res.status(200).json({
         match: classificationMatch,
         message: 'Campaign type classification successful.',
@@ -232,6 +288,5 @@ router.post('/', async (req, res) => {
       });
     }
 });
-// --- End Route Handler ---
 
 export default router;

@@ -165,41 +165,38 @@ router.post('/', async (req, res) => {
       return res.status(400).json({ error: 'Audience profile must be an object.' });
   }
 
+
   try {
     // --- Step 1: Deep Research & Analysis ---
     console.log("Initiating Step 1: Deep Research & Analysis");
     const step1PromptText = getStep1Prompt(campaignInputs);
-    // For debugging: console.log("Step 1 Prompt:", step1PromptText.substring(0, 500) + "...");
+    // console.log("Step 1 Prompt:", step1PromptText); // For debugging
 
     const step1Completion = await openai.chat.completions.create({
-      model: 'gpt-4o', 
+      model: 'gpt-4o', // Or your preferred model
       messages: [{ role: 'system', content: step1PromptText }],
-      temperature: 0.7, 
+      temperature: 0.7, // Adjust as needed
     });
 
     const step1Output = step1Completion.choices[0].message.content;
     console.log("Step 1 Output received.");
-    // For debugging: console.log("Step 1 Raw Output:", step1Output.substring(0, 500) + "...");
+    // console.log("Step 1 Raw Output:", step1Output); // For debugging
 
     // --- Step 2: Messaging Guide Synthesis ---
     console.log("Initiating Step 2: Messaging Guide Synthesis");
     const step2PromptText = getStep2Prompt(campaignInputs, step1Output);
-    // For debugging: console.log("Step 2 Prompt:", step2PromptText.substring(0, 500) + "...");
+    // console.log("Step 2 Prompt:", step2PromptText); // For debugging
 
     const step2Completion = await openai.chat.completions.create({
-      model: 'gpt-4o', 
+      model: 'gpt-4o', // Or your preferred model
       messages: [{ role: 'system', content: step2PromptText }],
-      temperature: 0.7, 
+      temperature: 0.7, // Adjust as needed
     });
 
     const finalMessagingGuide = step2Completion.choices[0].message.content;
     console.log("Step 2 Output (Final Messaging Guide) received.");
 
-    // Return both Step 1 and Step 2 outputs
-    res.json({ 
-      step1Analysis: step1Output, 
-      messagingGuide: finalMessagingGuide 
-    });
+    res.json({ messagingGuide: finalMessagingGuide });
 
   } catch (error) {
     console.error('❌ Messaging Guide Error (Multi-Step):', error);

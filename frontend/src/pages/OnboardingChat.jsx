@@ -1,18 +1,25 @@
-// OnboardingChat.jsx (fully featured)
+// OnboardingChat.jsx (fully featured and updated)
 import React, { useEffect, useRef, useState } from 'react';
 import { getAuth } from 'firebase/auth';
 import { useNavigate, useLocation } from 'react-router-dom';
 
 export default function OnboardingChat() {
   const location = useLocation();
-  const [stepIndex, setStepIndex] = useState(0);
+  const navigate = useNavigate();
+  const auth = getAuth(); // Assuming auth might be used for other purposes later
+
+  // Initialize stepIndex from navigation state, defaulting to 0
+  const [stepIndex, setStepIndex] = useState(location.state?.stepIndex || 0);
+  // Initialize answers from navigation state, defaulting to an empty object
   const [answers, setAnswers] = useState(location.state?.answers || {});
+
+  // Determine if we are in "editing a single field" mode
+  const isEditingSingleField = location.state?.isEditingSingleField === true;
+
   const [multiSelect, setMultiSelect] = useState([]);
   const [awaitingOtherInput, setAwaitingOtherInput] = useState(false);
   const [otherInput, setOtherInput] = useState('');
-  const scrollRef = useRef(null);
-  const navigate = useNavigate();
-  const auth = getAuth();
+  const scrollRef = useRef(null); // Assuming this might be used for scrolling a chat view
 
   const steps = [
     {
@@ -63,10 +70,43 @@ export default function OnboardingChat() {
     },
   ];
 
-  const currentStep = steps[stepIndex];
+  // Defensive check in case stepIndex is out of bounds (e.g., if steps array changes)
+  const currentStep = steps[stepIndex] || steps[0];
+
+  // Effect to reset multi-select and other input when the step changes
+  // This is important if the user navigates directly to a step that might have pre-filled states
+  useEffect(() => {
+    setMultiSelect([]);
+    setAwaitingOtherInput(false);
+    setOtherInput('');
+
+    // If the new step's answer is an array (for multi-select), pre-fill multiSelect state
+    if (currentStep && currentStep.multi && answers[currentStep.key] && Array.isArray(answers[currentStep.key])) {
+      setMultiSelect(answers[currentStep.key]);
+    }
+  }, [stepIndex, currentStep, answers]);
+
+
+  const updateAnswer = (key, value) => {
+    const updatedAnswers = { ...answers, [key]: value };
+    setAnswers(updatedAnswers);
+
+    if (isEditingSingleField) {
+      // If we were just editing a single field, save and go back to summary immediately.
+      navigate('/onboarding/summary', { state: { answers: updatedAnswers } });
+    } else {
+      // Otherwise, proceed with the normal onboarding flow.
+      if (stepIndex + 1 < steps.length) {
+        setStepIndex(stepIndex + 1);
+      } else {
+        // This is the last question in a normal flow
+        navigate('/onboarding/summary', { state: { answers: updatedAnswers } });
+      }
+    }
+  };
 
   const handleSingleSelect = (value) => {
-    if (value === 'Other') {
+    if (value === 'Other' && currentStep.options.includes('Other')) { // Ensure 'Other' is a valid option
       setAwaitingOtherInput(true);
     } else {
       updateAnswer(currentStep.key, value);
@@ -78,6 +118,9 @@ export default function OnboardingChat() {
       updateAnswer(currentStep.key, otherInput.trim());
       setOtherInput('');
       setAwaitingOtherInput(false);
+    } else {
+      // Optionally, provide feedback if other input is required but empty
+      alert("Please specify your 'Other' answer.");
     }
   };
 
@@ -85,72 +128,116 @@ export default function OnboardingChat() {
     setMultiSelect(prev =>
       prev.includes(value) ? prev.filter(v => v !== value) : [...prev, value]
     );
-  };
-
-  const handleMultiSubmit = () => {
-    const final = multiSelect.includes('Other') && otherInput.trim()
-      ? [...multiSelect.filter(v => v !== 'Other'), otherInput.trim()]
-      : multiSelect;
-    updateAnswer(currentStep.key, final);
-    setMultiSelect([]);
-    setOtherInput('');
-    setAwaitingOtherInput(false);
-  };
-
-  const updateAnswer = (key, value) => {
-    const updated = { ...answers, [key]: value };
-    setAnswers(updated);
-    if (stepIndex + 1 < steps.length) {
-      setStepIndex(stepIndex + 1);
-    } else {
-      navigate('/onboarding/summary', { state: { answers: updated } });
+    // If 'Other' is toggled, manage the awaitingOtherInput state
+    if (value === 'Other' && currentStep.options.includes('Other')) {
+      setAwaitingOtherInput(prev => !prev); // Toggle based on 'Other' selection
+      if (multiSelect.includes('Other')) { // If 'Other' was just deselected
+          setOtherInput(''); // Clear other input
+      }
     }
   };
 
+  const handleMultiSubmit = () => {
+    let finalSelection = [...multiSelect];
+    if (multiSelect.includes('Other') && otherInput.trim()) {
+      finalSelection = [...multiSelect.filter(v => v !== 'Other'), otherInput.trim()];
+    } else if (multiSelect.includes('Other') && !otherInput.trim()) {
+      // If 'Other' is selected but no text is provided, you might want to
+      // either remove 'Other' or prompt the user.
+      // For now, let's remove 'Other' if the text input is empty.
+      finalSelection = multiSelect.filter(v => v !== 'Other');
+      // Optionally, alert the user or handle this case differently
+      if (multiSelect.includes('Other')) { // only alert if 'Other' was actually selected
+        alert("You selected 'Other' but didn't specify. It won't be saved unless specified.");
+      }
+    }
+
+    updateAnswer(currentStep.key, finalSelection.length > 0 ? finalSelection : []); // Send empty array if nothing selected
+    // Resetting states after submit is handled by useEffect based on stepIndex change,
+    // but for multi-submit, since the step might not change (if editing single),
+    // we might need to reset them here if isEditingSingleField is true.
+    // However, the navigation in updateAnswer will cause a remount/state reset from location.
+  };
+
+
+  // Scroll to bottom, useful if this were a chat-like interface
+  // useEffect(() => {
+  //   if (scrollRef.current) {
+  //     scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+  //   }
+  // }, [stepIndex, currentStep.options, awaitingOtherInput]);
+
+
+  if (!currentStep) {
+    // This can happen if stepIndex is somehow out of bounds,
+    // though the default in currentStep definition tries to prevent this.
+    return <div className="p-4">Loading step or step not found...</div>;
+  }
+
   return (
-    <div className="p-4 max-w-xl mx-auto">
-      <h2 className="text-xl font-bold mb-4">Onboarding</h2>
-      <p className="mb-4">{currentStep.question}</p>
-      <div className="space-y-2">
+    <div className="p-4 max-w-xl mx-auto" ref={scrollRef}>
+      <h2 className="text-xl font-bold mb-4">
+        {isEditingSingleField ? `Editing: ${currentStep.key.replace(/_/g, ' ')}` : 'Onboarding'}
+      </h2>
+      <p className="mb-4 text-gray-700">{currentStep.question}</p>
+
+      <div className="space-y-3 bg-white shadow-md rounded-lg p-6">
         {currentStep.multi ? (
           <>
             {currentStep.options.map(opt => (
               <button
                 key={opt}
-                className={`block w-full text-left px-4 py-2 border rounded ${
-                  multiSelect.includes(opt) ? 'bg-blue-600 text-white' : 'bg-gray-100'
-                }`}
+                className={`block w-full text-left px-4 py-3 border rounded-md transition-colors duration-150 ease-in-out
+                  ${multiSelect.includes(opt)
+                    ? 'bg-blue-600 text-white border-blue-700 shadow-sm'
+                    : 'bg-gray-50 hover:bg-gray-100 text-gray-800 border-gray-300'
+                  }`}
                 onClick={() => handleMultiToggle(opt)}
               >
                 {opt}
               </button>
             ))}
-            {multiSelect.includes('Other') && (
-              <input
-                className="w-full mt-2 p-2 border rounded"
-                value={otherInput}
-                onChange={e => setOtherInput(e.target.value)}
-                placeholder="Please specify"
-              />
+            {(multiSelect.includes('Other') || (awaitingOtherInput && currentStep.multi && currentStep.options.includes('Other'))) && (
+              <div className="mt-3">
+                <label htmlFor="otherInputMulti" className="block text-sm font-medium text-gray-700 mb-1">
+                  Please specify 'Other':
+                </label>
+                <input
+                  id="otherInputMulti"
+                  type="text"
+                  className="w-full p-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                  value={otherInput}
+                  onChange={e => setOtherInput(e.target.value)}
+                  placeholder="Your specific choice"
+                />
+              </div>
             )}
             <button
-              className="mt-4 px-4 py-2 bg-green-600 text-white rounded"
+              className="mt-6 w-full px-4 py-2 bg-green-600 text-white font-semibold rounded-md shadow hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 transition-colors duration-150 ease-in-out"
               onClick={handleMultiSubmit}
+              disabled={multiSelect.length === 0 && !otherInput.trim()} // Disable if nothing selected/typed for Other
             >
-              Submit
+              Submit Selection
             </button>
           </>
         ) : awaitingOtherInput ? (
           <>
+            <label htmlFor="otherInputSingle" className="block text-sm font-medium text-gray-700 mb-1">
+              Please specify for '{currentStep.options.find(opt => opt === "Other") || "Other"}':
+            </label>
             <input
-              className="w-full p-2 border rounded"
+              id="otherInputSingle"
+              type="text"
+              className="w-full p-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
               value={otherInput}
               onChange={e => setOtherInput(e.target.value)}
-              placeholder="Please specify"
+              placeholder="Your specific choice"
+              autoFocus
             />
             <button
-              className="mt-2 px-4 py-2 bg-green-600 text-white rounded"
+              className="mt-4 w-full px-4 py-2 bg-green-600 text-white font-semibold rounded-md shadow hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 transition-colors duration-150 ease-in-out"
               onClick={handleOtherSubmit}
+              disabled={!otherInput.trim()} // Disable if input is empty
             >
               Continue
             </button>
@@ -159,7 +246,7 @@ export default function OnboardingChat() {
           currentStep.options.map(opt => (
             <button
               key={opt}
-              className="block w-full text-left px-4 py-2 border rounded bg-gray-100 hover:bg-blue-100"
+              className="block w-full text-left px-4 py-3 border border-gray-300 rounded-md bg-gray-50 hover:bg-gray-100 text-gray-800 shadow-sm transition-colors duration-150 ease-in-out"
               onClick={() => handleSingleSelect(opt)}
             >
               {opt}
@@ -167,6 +254,16 @@ export default function OnboardingChat() {
           ))
         )}
       </div>
+
+      {/* Optional: Button to go back to summary if editing, or to previous step */}
+      {isEditingSingleField && (
+        <button
+            onClick={() => navigate('/onboarding/summary', { state: { answers } })}
+            className="mt-6 w-full px-4 py-2 bg-gray-200 text-gray-700 font-semibold rounded-md shadow hover:bg-gray-300 focus:outline-none focus:ring-2 focus:ring-gray-400 focus:ring-offset-2 transition-colors duration-150 ease-in-out"
+        >
+            Cancel Edit & Return to Summary
+        </button>
+      )}
     </div>
   );
 }
