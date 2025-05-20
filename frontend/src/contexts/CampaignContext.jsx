@@ -146,9 +146,12 @@ export const CampaignProvider = ({ children }) => {
     const goalsForPayload = dataOverride?.goals ?? goalsFromContext;
     const messagingInputsForPayload = dataOverride?.messaging_inputs ?? messagingInputsFromContext;
 
-    if (!idForPayload || !summaryForPayload || !classificationForPayload || !goalsForPayload) {
-      toast({ variant: "destructive", title: "Save Error", description: `Cannot save: core data (ID, summary, classification, or goals) missing for step: ${currentStepDescription}.` });
-      console.error("CTX: Save Error - Missing core data", {idForPayload, summaryForPayload, classificationForPayload, goalsForPayload});
+//    if (!idForPayload || !summaryForPayload || !classificationForPayload || !goalsForPayload) {
+//      toast({ variant: "destructive", title: "Save Error", description: `Cannot save: core data (ID, summary, classification, or goals) missing for step: ${currentStepDescription}.` });
+//      console.error("CTX: Save Error - Missing core data", {idForPayload, summaryForPayload, classificationForPayload, goalsForPayload});
+    if (!summaryForPayload || !classificationForPayload || !goalsForPayload || goalsForPayload.length === 0) {
+      toast({ variant: "destructive", title: "Save Error", description: `Cannot save: core data (summary, classification, or goals) missing or goals are empty for step: ${currentStepDescription}.` });
+      console.error("CTX: Save Error - Missing summary, classification, or non-empty goals:", {idForPayload, summaryForPayload, classificationForPayload, goalsForPayload});
       return null;
     }
     
