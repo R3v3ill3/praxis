@@ -12,6 +12,7 @@ import messagingGuideRouter from './messaging-guide2.js';
 import contentGeneratorRouter from './generate-content.js';
 import messagingChatRouter from './messaging-chat.js'; // This is the import for the module PM2 says it can't find
 import classificationOptions from './classification-options.js';
+import actionPlanGeneratorRouter from './action-plan-generator.js';
 
 const router = express.Router();
 
@@ -28,5 +29,6 @@ router.use('/messaging-guide', messagingGuideRouter);
 router.use('/generate-content', contentGeneratorRouter);
 router.use('/messaging-chat', messagingChatRouter); // Mounted here
 router.use('/classification-options', classificationOptions);
+router.use('/generate-action-plan', actionPlanGeneratorRouter);
 
 export default router;

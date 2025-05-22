@@ -30,6 +30,7 @@ import MessagingDevelopmentChatPage from './pages/MessagingDevelopmentChatPage';
 import MessagingGuidePage from './pages/MessagingGuidePage'; // <<< IMPORT THE NEW PAGE
 import CampaignReviewSave from './pages/CampaignReviewSave';
 import MockScenarioGeneratorPage from './pages/MockScenarioGeneratorPage';
+import ActionPlanPage from './pages/ActionPlanPage';
 
 // Simple ProtectedRoute component
 const ProtectedRoute = ({ children }) => {
@@ -68,7 +69,8 @@ export default function App() {
         <Route path="/app/campaign/confirm-goals" element={<ProtectedRoute><ConfirmGoalsPage /></ProtectedRoute>} />
         <Route path="/app/campaign/rank-goals" element={<ProtectedRoute><RankGoalsPage /></ProtectedRoute>} />
         <Route path="/app/campaign/next-steps-summary" element={<ProtectedRoute><CampaignNextStepsPage /></ProtectedRoute>} />
-        
+        <Route path="/app/campaign/:campaignId/action-plan" element={<ActionPlanPage />} />
+
         {/* Messaging Development */}
         <Route path="/app/campaign/develop-messaging" element={<ProtectedRoute><MessagingDevelopmentChatPage /></ProtectedRoute>} />
         {/* The route from MessagingDevelopmentChatPage button:
