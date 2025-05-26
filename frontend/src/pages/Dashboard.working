@@ -1,49 +1,39 @@
 // frontend/src/pages/Dashboard.jsx
 import React, { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { useAuth } from '../contexts/AuthContext.jsx'; // Stays the same
-import { db } from '../firebase'; // Stays the same
-import { doc, getDoc } from 'firebase/firestore'; // Stays the same
-import axios from 'axios'; // Stays the same
+import { useAuth } from '../contexts/AuthContext.jsx';
+import { db } from '../firebase';
+import { doc, getDoc } from 'firebase/firestore';
+import axios from 'axios';
 
 export default function Dashboard() {
   console.log("✅ Dashboard component mounted");
-  const { user, loading: authLoading } = useAuth(); // MODIFIED: Get 'user' and 'loading' (aliased to authLoading)
+  const { currentUser, getIdToken } = useAuth();
   const navigate = useNavigate();
 
   const [organizationData, setOrganizationData] = useState(null);
   const [campaigns, setCampaigns] = useState([]);
-  const [loadingOrg, setLoadingOrg] = useState(true); // This is for org data fetching
-  const [loadingCampaigns, setLoadingCampaigns] = useState(true); // This is for campaigns data fetching
+  const [loadingOrg, setLoadingOrg] = useState(true);
+  const [loadingCampaigns, setLoadingCampaigns] = useState(true);
   const [error, setError] = useState('');
 
   useEffect(() => {
     const fetchData = async () => {
-      // MODIFIED: Wait for authLoading to be false
-      if (authLoading) {
-        console.log("Dashboard Effect: Auth state is loading. Waiting...");
-        // Keep component-specific loading true until auth is resolved
-        setLoadingOrg(true);
-        setLoadingCampaigns(true);
-        return;
-      }
+      console.log("Dashboard Effect: currentUser from useAuth():", currentUser);
 
-      console.log("Dashboard Effect: Auth state resolved. User from useAuth():", user ? user.uid : 'null');
-
-      if (!user) { // MODIFIED: Check user (from useAuth)
-        console.log("Dashboard Effect: No user logged in after auth check. Setting component loading states false.");
+      if (!currentUser) {
+        console.log("Dashboard Effect: No user logged in. Setting loading states to false.");
         setLoadingOrg(false);
         setLoadingCampaigns(false);
-        // navigate('/login'); // Consider redirecting if not handled by ProtectedRoute, though ProtectedRoute should handle this.
+        // navigate('/login'); // Consider redirecting
         return;
       }
 
-      // If user exists, proceed to fetch data
-      setLoadingOrg(true); // Reset for actual data fetching attempt
+      setLoadingOrg(true);
       let orgExists = false;
       try {
-        console.log(`Dashboard Effect: Fetching organisation data for UID: ${user.uid}`); // MODIFIED: Use user.uid
-        const orgDocRef = doc(db, 'organisations', user.uid); // MODIFIED: Use user.uid
+        console.log(`Dashboard Effect: Fetching organisation data for UID: ${currentUser.uid}`);
+        const orgDocRef = doc(db, 'organisations', currentUser.uid);
         const orgDocSnap = await getDoc(orgDocRef);
 
         if (orgDocSnap.exists()) {
@@ -53,31 +43,31 @@ export default function Dashboard() {
           setOrganizationData(data);
         } else {
           console.log("Dashboard Effect: No organization data found for user. Redirecting to onboarding.");
-          navigate('/onboarding');
-          setLoadingOrg(false); // Still set these if redirecting
-          setLoadingCampaigns(false);
-          return;
+           navigate('/onboarding');
+           setLoadingOrg(false);
+           setLoadingCampaigns(false);
+           return;
         }
       } catch (err) {
         console.error("Dashboard Effect: Error fetching organization data:", err);
         setError('Failed to load organization details.');
-        orgExists = false; // Ensure this is set on error
+        orgExists = false;
       } finally {
         setLoadingOrg(false);
       }
 
-      if (orgExists && !error) { // Ensure no error before fetching campaigns
+       if (orgExists && !error) {
         setLoadingCampaigns(true);
         let token = null;
         try {
-          console.log("Dashboard Effect: Attempting to get Firebase ID token from user object...");
-          token = await user.getIdToken(); // MODIFIED: Call getIdToken() on the user object
+          console.log("Dashboard Effect: Attempting to get Firebase ID token via getIdToken()...");
+          token = await getIdToken();
           console.log("Dashboard Effect: Got Firebase ID token (first 10 chars):", token ? token.substring(0, 10) + '...' : 'No token found');
 
           if (!token) {
-            console.error("Dashboard Effect: Authentication token not available from user object.");
+            console.error("Dashboard Effect: Authentication token not available after call.");
             setError(prev => prev + (prev ? ' | ' : '') + 'Authentication token unavailable.');
-            setCampaigns([]); // Clear campaigns on error
+            setCampaigns([]);
             setLoadingCampaigns(false);
             return;
           }
@@ -88,50 +78,47 @@ export default function Dashboard() {
           });
 
           console.log("Dashboard Effect: Received response from /api/campaigns:", response);
-          setCampaigns(response.data || []);
+          console.log("Dashboard Effect: Campaigns data:", response.data);
+
+          setCampaigns(response.data || []); // Ensure array
+
         } catch (err) {
           console.error("Dashboard Effect: Error fetching campaigns from API:", err);
           if (err.response) {
             console.error("Dashboard Effect: API Error Response Data:", err.response.data);
-            let errMsg = `API Error ${err.response.status}: Failed to load campaigns.`;
-            if (err.response.status === 401 || err.response.status === 403) {
-              errMsg += ' (Authorization Failed)';
-            } else if (err.response.data?.message) {
-              errMsg += ` Backend Message: ${err.response.data.message}`;
-            }
-            setError(prev => prev + (prev ? ' | ' : '') + errMsg);
+            console.error("Dashboard Effect: API Error Response Status:", err.response.status);
+            console.error("Dashboard Effect: API Error Response Headers:", err.response.headers);
+             let errMsg = `API Error ${err.response.status}: Failed to load campaigns.`;
+             if (err.response.status === 401 || err.response.status === 403) {
+                 errMsg += ' (Authorization Failed)';
+             } else if (err.response.data?.message) {
+                 errMsg += ` Backend Message: ${err.response.data.message}`;
+             }
+             setError(prev => prev + (prev ? ' | ' : '') + errMsg);
           } else if (err.request) {
+            console.error("Dashboard Effect: API Error Request:", err.request);
             setError(prev => prev + (prev ? ' | ' : '') + 'Network error or no response from server when fetching campaigns.');
           } else {
+            console.error('Dashboard Effect: API Error Message:', err.message);
             setError(prev => prev + (prev ? ' | ' : '') + 'Error setting up request to fetch campaigns.');
           }
-          setCampaigns([]); // Clear campaigns on error
+          setCampaigns([]);
         } finally {
           setLoadingCampaigns(false);
         }
       } else if (!orgExists) {
-        console.log("Dashboard Effect: Skipping campaign fetch because organization data check failed, error occurred, or redirected.");
-        setLoadingCampaigns(false); // Ensure this is set
+          console.log("Dashboard Effect: Skipping campaign fetch because organization data check failed or redirected.");
+          setLoadingCampaigns(false);
       }
     };
 
     fetchData();
-    // MODIFIED: Add authLoading and user to dependency array. Remove getIdToken as it's now part of 'user'.
-  }, [user, authLoading, navigate]);
+  }, [currentUser, getIdToken, navigate]);
 
-  console.log(`Dashboard Render: AuthLoading=${authLoading}, LoadingOrg=${loadingOrg}, LoadingCampaigns=${loadingCampaigns}, Error='${error}', Campaigns Count=${campaigns?.length}`);
 
-  // MODIFIED: Prioritize authLoading for the top-level loading display
-  if (authLoading) {
-    return <div className="p-6">Authenticating user...</div>;
-  }
+  console.log(`Dashboard Render: LoadingOrg=${loadingOrg}, LoadingCampaigns=${loadingCampaigns}, Error='${error}', Campaigns Count=${campaigns?.length}`);
 
-  // If auth is resolved, but user is null (and ProtectedRoute didn't catch it, though it should)
-  if (!user && !authLoading) {
-     return <div className="p-6">Please log in to view the dashboard. You will be redirected shortly... (If not, <Link to="/login" className="text-indigo-600">click here to login</Link>)</div>;
-  }
 
-  // If auth is resolved, user exists, but org/campaign data is still loading
   if (loadingOrg || loadingCampaigns) {
     return <div className="p-6">Loading dashboard data...</div>;
   }
@@ -148,7 +135,7 @@ export default function Dashboard() {
   return (
     <div className="p-6 space-y-6 max-w-5xl mx-auto">
       <h1 className="text-3xl font-bold">Dashboard</h1>
-      <p>Welcome back, {user?.email || 'User'}! Manage your organisation and campaigns here.</p> {/* MODIFIED: Use user.email */}
+      <p>Welcome back! Manage your organisation and campaigns here.</p>
 
       <button
         onClick={() => navigate('/app/campaign/new')}
@@ -173,7 +160,7 @@ export default function Dashboard() {
       <div className="bg-white shadow p-6 rounded-lg mt-6">
         <h2 className="text-2xl font-semibold mb-4">Your Campaigns</h2>
         {Array.isArray(campaigns) && campaigns.length > 0 ? (
-          <ul className="space-y-6">
+          <ul className="space-y-6"> {/* Updated for better spacing between campaign cards */}
             {campaigns.map((campaign) => (
               <li key={campaign.id} className="p-4 border rounded-md shadow-sm bg-gray-50">
                 <div className="flex justify-between items-start mb-3">
@@ -185,13 +172,15 @@ export default function Dashboard() {
                         </p>
                         )}
                     </div>
+                    {/* Optional: Add a general "View Campaign" or "Edit Campaign" button here if needed */}
                 </div>
 
                 <h4 className="text-md font-medium text-gray-700 mb-2">Generated Outputs:</h4>
                 <ul className="list-none space-y-2 text-sm">
+                  {/* Campaign Classification */}
                   <li className="flex justify-between items-center">
                     <span>📊 Campaign Classification:</span>
-                    {campaign.classification && campaign.classification.primary_type ? ( // MODIFIED: Check primary_type for more robust check
+                    {campaign.classification && campaign.classification.type ? ( //
                       <Link to={`${campaignOutputBaseUrl}/${campaign.id}/messaging-guide`} className="text-indigo-600 hover:text-indigo-800 font-medium">
                         View
                       </Link>
@@ -199,9 +188,10 @@ export default function Dashboard() {
                       <span className="text-gray-400">Not yet generated</span>
                     )}
                   </li>
+                  {/* Messaging Research (Step 1 Analysis) */}
                   <li className="flex justify-between items-center">
                     <span>🔬 Messaging Research (Analysis):</span>
-                    {campaign.step1Analysis ? (
+                    {campaign.step1Analysis ? ( //
                       <Link to={`${campaignOutputBaseUrl}/${campaign.id}/messaging-guide`} className="text-indigo-600 hover:text-indigo-800 font-medium">
                         View
                       </Link>
@@ -209,9 +199,10 @@ export default function Dashboard() {
                       <span className="text-gray-400">Not yet generated</span>
                     )}
                   </li>
+                  {/* Messaging Guide */}
                   <li className="flex justify-between items-center">
                     <span>🗣️ Messaging Guide:</span>
-                    {campaign.messagingGuide ? (
+                    {campaign.messagingGuide ? ( //
                       <Link to={`${campaignOutputBaseUrl}/${campaign.id}/messaging-guide`} className="text-indigo-600 hover:text-indigo-800 font-medium">
                         View
                       </Link>
@@ -219,9 +210,10 @@ export default function Dashboard() {
                       <span className="text-gray-400">Not yet generated</span>
                     )}
                   </li>
+                  {/* Action Plan */}
                   <li className="flex justify-between items-center">
                     <span>🗺️ Action Plan:</span>
-                    {campaign.actionPlan ? (
+                    {campaign.actionPlan ? ( //
                       <Link to={`${campaignOutputBaseUrl}/${campaign.id}/action-plan`} className="text-indigo-600 hover:text-indigo-800 font-medium">
                         View
                       </Link>

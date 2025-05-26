@@ -5,11 +5,14 @@ import express from 'express';
 import { db } from '../firebase.js'; // Ensure db is initialized and exported from firebase.js
 import { FieldValue } from 'firebase-admin/firestore';
 import authMiddleware from '../middleware/authMiddleware.js'; // Import the middleware
+import exportCampaignRouter from './export-campaign.js'; // <<< 1. IMPORT THE EXPORT ROUTER
 
 const router = express.Router();
 
 // Apply auth middleware to all routes in this file
 router.use(authMiddleware);
+
+router.use('/', exportCampaignRouter);
 
 // Create a new campaign (associating with user)
 router.post('/create', async (req, res) => {

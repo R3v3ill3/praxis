@@ -1,21 +1,23 @@
 // frontend/src/pages/CampaignNextSteps.jsx
-import React from 'react';
+import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useCampaign } from '../contexts/CampaignContext'; // Ensure this path is correct
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../components/ui/Card'; // Assuming shadcn/ui
 import { Button } from '../components/ui/Button';
+import { useToast } from '../components/ui/use-toast'; // For download feedback
+import { Download, Loader2 } from 'lucide-react'; // For icons
 
-export default function CampaignNextStepsPage() { // Renamed component for clarity
+export default function CampaignNextStepsPage() {
   // Use the campaign context to get the latest campaign data
-  // campaignId, summary, classification, goals should be populated from previous steps.
-  const { campaignId, summary, classification, goals } = useCampaign();
+  const { campaignId, summary, classification, goals, messagingGuide, step1Analysis } = useCampaign();
   const navigate = useNavigate();
+  const { toast } = useToast();
 
-  console.log("CampaignNextStepsPage: Loaded. Context Data:", { campaignId, summary, classification, goals });
+  const [isDownloading, setIsDownloading] = useState(false);
+
+  console.log("CampaignNextStepsPage: Loaded. Context Data:", { campaignId, summary, classification, goals, messagingGuide, step1Analysis });
 
   if (!summary || !classification || !goals || !campaignId) {
-    // This can happen if the user navigates here directly without completing previous steps
-    // or if context state was somehow lost.
     console.error("CampaignNextStepsPage: Essential campaign data (summary, classification, goals, or campaignId) is missing from context.");
     return (
       <div className="p-6 max-w-3xl mx-auto text-center">
@@ -37,13 +39,58 @@ export default function CampaignNextStepsPage() { // Renamed component for clari
   }
 
   const handleNavigate = (path) => {
-    // You might want to pass the campaignId as a URL param or ensure the next pages
-    // also pull it from context.
     navigate(path);
   };
 
-  // Ensure goals are displayed correctly (they should be an array of objects)
+  const handleDownloadCampaignData = async () => {
+    if (!campaignId) {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "Campaign ID is missing for export.",
+      });
+      return;
+    }
+
+    setIsDownloading(true);
+    try {
+      const response = await fetch(`/api/campaigns/${campaignId}/export`); // Calls export-campaign.js
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ error: "Failed to fetch campaign data for export." }));
+        throw new Error(errorData.error || `HTTP error! Status: ${response.status}`);
+      }
+      const campaignExportData = await response.json();
+
+      const jsonString = JSON.stringify(campaignExportData, null, 2);
+      const blob = new Blob([jsonString], { type: "application/json" });
+      const href = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = href;
+      link.download = `campaign-data-${campaignId}.json`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(href);
+
+      toast({
+        title: "Download Started",
+        description: "Full campaign data export is downloading.",
+      });
+
+    } catch (error) {
+      console.error("[CampaignNextStepsPage] Error downloading campaign data:", error);
+      toast({
+        variant: "destructive",
+        title: "Download Failed",
+        description: error.message || "Could not download campaign data.",
+      });
+    } finally {
+      setIsDownloading(false);
+    }
+  };
+
   const displayGoals = goals.map(goal => goal.label || goal.id).join(', ');
+  const canDevelopActionPlan = !!messagingGuide && !!step1Analysis; // Check if messaging data is present
 
   return (
     <div className="p-4 md:p-6 max-w-3xl mx-auto space-y-6">
@@ -65,7 +112,7 @@ export default function CampaignNextStepsPage() { // Renamed component for clari
           </div>
           <div>
             <h3 className="text-lg font-semibold mb-1">Classification:</h3>
-            <p className="text-sm text-gray-700"><strong>Type:</strong> {classification.primary_type} - {classification.secondary_type} ({classification.sub_type || classification.use_case})</p>
+            <p className="text-sm text-gray-700"><strong>Type:</strong> {classification.primary_type} - {classification.secondary_type} ({classification.sub_type || classification.use_case || classification.id})</p>
           </div>
           <div>
             <h3 className="text-lg font-semibold mb-1">Goals:</h3>
@@ -79,42 +126,50 @@ export default function CampaignNextStepsPage() { // Renamed component for clari
           <CardTitle>Choose Your Next Step</CardTitle>
         </CardHeader>
         <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <Button 
-            onClick={() => handleNavigate('/app/campaign/develop-messaging')} // New route for step 1 of messaging
+          <Button
+            onClick={() => handleNavigate(`/app/campaign/${campaignId}/messaging-guide`)} // Navigate to messaging guide generation
             className="w-full text-lg py-3"
             size="lg"
+            // Consider if this should also be disabled if already generated, or allow re-generation.
+            // For now, always enabled.
           >
-            Develop Messaging
+            Develop/View Messaging Guide
           </Button>
-          <Button 
-            onClick={() => handleNavigate('/app/campaign/develop-action-plan')} // Placeholder
+          <Button
+            onClick={() => handleNavigate(`/app/campaign/${campaignId}/action-plan`)} // Links to ActionPlanPage
             className="w-full text-lg py-3"
-            variant="outline"
+            variant={canDevelopActionPlan ? "default" : "outline"}
             size="lg"
-            disabled 
+            disabled={!canDevelopActionPlan || isDownloading}
+            title={!canDevelopActionPlan ? "Complete 'Develop Messaging' step first" : "Develop Digital Action Plan"}
           >
-            Action Plan Development (Placeholder)
+            Develop Action Plan
           </Button>
-          <Button 
+          <Button
+            onClick={handleDownloadCampaignData}
+            className="w-full text-lg py-3 bg-green-600 hover:bg-green-700 text-white"
+            size="lg"
+            disabled={isDownloading || !campaignId} // Ensure campaignId exists
+          >
+            {isDownloading ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : <Download className="mr-2 h-5 w-5" />}
+            Download Campaign Data
+          </Button>
+          <Button
             onClick={() => handleNavigate('/app/campaign/build-audience')} // Placeholder
             className="w-full text-lg py-3"
             variant="outline"
             size="lg"
-            disabled
+            disabled // Remains placeholder
           >
             Build Audience (Placeholder)
           </Button>
-          <Button 
-            onClick={() => handleNavigate('/app/campaign/generate-summary-doc')} // Placeholder
-            className="w-full text-lg py-3"
-            variant="outline"
-            size="lg"
-            disabled
-          >
-            Generate Summary Doc (Placeholder)
-          </Button>
         </CardContent>
       </Card>
+       <div className="text-center mt-4">
+         <Button variant="outline" onClick={() => navigate('/dashboard')} disabled={isDownloading}>
+           Back to Dashboard
+         </Button>
+       </div>
     </div>
   );
 }

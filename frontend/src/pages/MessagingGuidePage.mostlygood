@@ -5,11 +5,10 @@ import { useToast } from '../components/ui/use-toast';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { ExternalLink, Download, FileText } from 'lucide-react';
+import { ExternalLink, Download, FileText } from 'lucide-react'; // Removed Send, kept FileText
 import { mockScenarios } from '../lib/mock-data';
-import { useAuth } from '../contexts/AuthContext.jsx';
 
-// API function to fetch campaign data (remains the same)
+// API function to fetch campaign data
 async function fetchCampaignDataById(campaignId, selectedMockScenarioKey) {
   console.log(`Attempting to fetch campaign data for ID: ${campaignId}`);
   if (selectedMockScenarioKey && mockScenarios && mockScenarios[selectedMockScenarioKey]) {
@@ -26,6 +25,7 @@ async function fetchCampaignDataById(campaignId, selectedMockScenarioKey) {
       console.error(`Error parsing campaign data from localStorage for key ${localStorageKey}. Falling back. Error:`, e);
     }
   }
+  // Fallback to default mock if nothing found and no specific mock requested
   console.warn(`No specific mock scenario requested via query param, and no data in localStorage for '${campaignId}'. Using DEFAULT hardcoded mock from mock-data.js.`);
   const defaultMock = mockScenarios?.defaultGigWorkers || {
     id: campaignId,
@@ -37,7 +37,7 @@ async function fetchCampaignDataById(campaignId, selectedMockScenarioKey) {
   return { ...defaultMock, id: campaignId };
 }
 
-// API function to generate the messaging guide (remains the same)
+// API function to generate the messaging guide
 async function generateMessagingGuideApi(campaignDetails) {
   console.log("LIVE API Call to /api/messaging-guide with details:", campaignDetails);
   const response = await fetch('/api/messaging-guide', {
@@ -52,21 +52,12 @@ async function generateMessagingGuideApi(campaignDetails) {
   return response.json();
 }
 
-// MODIFIED API function to save messaging outputs
-async function saveMessagingOutputsToFirestore(campaignId, step1Analysis, messagingGuide, token) {
-  console.log(`Attempting to save messaging outputs for campaign ID: ${campaignId}. Token provided: ${!!token}`);
-  if (!token) {
-    console.error("saveMessagingOutputsToFirestore: No token provided to function.");
-    // This specific error message "Unauthorized: No token provided" matches your console.
-    // It suggests the 'token' variable itself was falsy when the function was called.
-    throw new Error("Unauthorized: No token provided");
-  }
+// API function to save messaging outputs to Firestore via backend
+async function saveMessagingOutputsToFirestore(campaignId, step1Analysis, messagingGuide) {
+  console.log(`Attempting to save messaging outputs for campaign ID: ${campaignId}`);
   const response = await fetch('/api/save-campaign', {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${token}`,
-    },
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       campaignId,
       step1Analysis,
@@ -75,7 +66,6 @@ async function saveMessagingOutputsToFirestore(campaignId, step1Analysis, messag
   });
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({ error: 'Failed to save messaging outputs. Server returned non-JSON response.' }));
-    if (response.status === 401) throw new Error("Unauthorized: Token rejected by server. Failed to save outputs.");
     throw new Error(errorData.error || `HTTP error! status: ${response.status} while saving outputs.`);
   }
   return response.json();
@@ -87,7 +77,6 @@ export default function MessagingGuidePage() {
   const navigate = useNavigate();
   const { toast } = useToast();
   const location = useLocation();
-  const { user, loading: authLoading } = useAuth();
 
   const [campaignData, setCampaignData] = useState(null);
   const [step1Analysis, setStep1Analysis] = useState('');
@@ -106,18 +95,10 @@ export default function MessagingGuidePage() {
         return;
     }
 
-    // <<< ADDED authLoading CHECK AT THE VERY BEGINNING of data operations >>>
-    if (authLoading) {
-      console.log("MessagingGuidePage: Auth state is loading. Waiting to load data and generate guide...");
-      setIsLoading(true); // Ensure main loading state reflects this
-      return;
-    }
-    // <<< END ADDED CHECK >>>
-
     const queryParams = new URLSearchParams(location.search);
     const selectedMockKey = queryParams.get('mockScenario');
 
-    console.log(`Attempting to load data and generate guide for campaign ID: ${campaignId}${selectedMockKey ? ` (Using Mock Scenario: ${selectedMockKey})` : ''}. User: ${user ? user.uid : 'None'}`);
+    console.log(`Attempting to load data and generate guide for campaign ID: ${campaignId}${selectedMockKey ? ` (Using Mock Scenario: ${selectedMockKey})` : ''}.`);
     setIsLoading(true);
     setIsGuideSaved(false);
     setError(null);
@@ -127,45 +108,59 @@ export default function MessagingGuidePage() {
 
     try {
       const fetchedData = await fetchCampaignDataById(campaignId, selectedMockKey);
-      setCampaignData(fetchedData);
+      setCampaignData(fetchedData); // Keep the full fetched data for other uses (like download title)
       console.log("Full campaign data fetched for guide page:", fetchedData);
 
-      if (!fetchedData) {
+      if (!fetchedData) { // Added a check for fetchedData itself
         throw new Error("Failed to fetch campaign data. Data is null.");
       }
 
+      // Ensure messaging_inputs exists, defaulting to an empty object if not
       const currentMessagingInputs = fetchedData.messaging_inputs || {};
-      const payloadForGuide = { ...currentMessagingInputs };
+      const payloadForGuide = { ...currentMessagingInputs }; // Start with current messaging_inputs
 
+      // --- PREFILL LOGIC ---
       console.log("MessagingGuidePage: Starting prefill. Initial payloadForGuide:", JSON.parse(JSON.stringify(payloadForGuide)));
       if (fetchedData.summary) {
         if (!payloadForGuide.issueName && fetchedData.summary.purpose) {
+          console.log("MessagingGuidePage: Prefilling issueName from summary.purpose:", fetchedData.summary.purpose);
           payloadForGuide.issueName = fetchedData.summary.purpose;
         }
         if (!payloadForGuide.primaryAudience && fetchedData.summary.audience) {
+          console.log("MessagingGuidePage: Prefilling primaryAudience from summary.audience:", fetchedData.summary.audience);
           payloadForGuide.primaryAudience = fetchedData.summary.audience;
         }
         if (!payloadForGuide.geographicContext && fetchedData.summary.location) {
+          console.log("MessagingGuidePage: Prefilling geographicContext from summary.location:", fetchedData.summary.location);
           payloadForGuide.geographicContext = fetchedData.summary.location;
         }
+        // Attempt prefill for proposedChange from summary.proposedChange (less likely to be populated)
         if (!payloadForGuide.proposedChange && fetchedData.summary.proposedChange) {
+            console.log("MessagingGuidePage: Prefilling proposedChange from summary.proposedChange:", fetchedData.summary.proposedChange);
             payloadForGuide.proposedChange = fetchedData.summary.proposedChange;
         }
       }
 
       if (fetchedData.goals && fetchedData.goals.length > 0) {
+        // For proposedChange, prioritize the first goal's label if still empty
         if (!payloadForGuide.proposedChange && fetchedData.goals[0] && fetchedData.goals[0].label) {
+          console.log("MessagingGuidePage: Prefilling proposedChange from goals[0].label:", fetchedData.goals[0].label);
           payloadForGuide.proposedChange = fetchedData.goals[0].label;
         }
+        // For desiredOutcome, combine goal labels if still empty or not specifically set
         if (!payloadForGuide.desiredOutcome) {
+          console.log("MessagingGuidePage: Prefilling desiredOutcome from goals labels.");
           payloadForGuide.desiredOutcome = fetchedData.goals.map(g => g.label).filter(Boolean).join('; ');
         }
       }
 
+      // Ensure nested objects exist if API expects them, even if empty
       payloadForGuide.audienceProfile = payloadForGuide.audienceProfile || {};
       payloadForGuide.deliveryContext = payloadForGuide.deliveryContext || {};
       console.log("MessagingGuidePage: Prefill complete. Final payloadForGuide before validation:", JSON.parse(JSON.stringify(payloadForGuide)));
+      // --- END PREFILL LOGIC ---
       
+      // Validation check (this is line 116 from your original error trace)
       if (!payloadForGuide.issueName || !payloadForGuide.proposedChange || !payloadForGuide.primaryAudience) {
           console.error("MessagingGuidePage: Core data still missing AFTER prefill attempt.", payloadForGuide, "Original fetchedData for context:", fetchedData);
           throw new Error("Core data (issue, proposed change, primary audience) for generating the guide is missing, even after prefill. Please ensure campaign summary and goals are complete and try again, or use the chat to define these values.");
@@ -179,41 +174,29 @@ export default function MessagingGuidePage() {
       if (guideResult && guideResult.step1Analysis) {
         generatedStep1 = guideResult.step1Analysis;
         setStep1Analysis(generatedStep1);
-      } else { console.warn("Step 1 analysis content is missing from API response."); }
+      } else {
+        console.warn("Step 1 analysis content is missing from API response.");
+      }
 
       if (guideResult && guideResult.messagingGuide) {
         generatedMessagingGuide = guideResult.messagingGuide;
         setMessagingGuide(generatedMessagingGuide);
-      } else { console.warn("Messaging guide (Step 2) content is missing from API response."); }
+      } else {
+        console.warn("Messaging guide (Step 2) content is missing from API response.");
+      }
       
       if (generatedStep1 || generatedMessagingGuide) {
         toast({ title: "Success", description: "Messaging guide content generated!" });
-        
-        // Check for user *before* trying to get token or save
-        if (!user) {
-          console.error("MessagingGuidePage: No authenticated user. Outputs generated but cannot save.");
-          toast({ variant: "destructive", title: "Save Error", description: "No authenticated user. Generated outputs cannot be saved." });
-        } else {
-          setIsSaving(true);
-          let token = null; // Initialize token
-          try {
-            console.log("MessagingGuidePage: Attempting to get ID token for saving outputs...");
-            token = await user.getIdToken(true); // Pass true to force refresh, just in case
-            console.log("MessagingGuidePage: Token for save obtained:", !!token);
-
-            if (!token) { // Explicit check again
-                throw new Error("Failed to retrieve authentication token for saving.");
-            }
-
-            await saveMessagingOutputsToFirestore(campaignId, generatedStep1, generatedMessagingGuide, token);
-            toast({ title: "Saved to DB", description: "Messaging outputs saved to campaign." });
-            setIsGuideSaved(true);
-          } catch (saveError) {
-            console.error("Error saving messaging outputs to Firestore:", saveError, "Token was:", token); // Log the token state
-            toast({ variant: "destructive", title: "Save Failed", description: `Could not save outputs to DB: ${saveError.message}` });
-          } finally {
-            setIsSaving(false);
-          }
+        setIsSaving(true);
+        try {
+          await saveMessagingOutputsToFirestore(campaignId, generatedStep1, generatedMessagingGuide);
+          toast({ title: "Saved to DB", description: "Messaging outputs saved to campaign." });
+          setIsGuideSaved(true);
+        } catch (saveError) {
+          console.error("Error saving messaging outputs to Firestore:", saveError);
+          toast({ variant: "destructive", title: "Save Failed", description: `Could not save outputs to DB: ${saveError.message}` });
+        } finally {
+          setIsSaving(false);
         }
       } else if (guideResult) {
         toast({ variant: "default", title: "Notice", description: "Guide generation complete, but no content was returned from the AI." });
@@ -226,17 +209,13 @@ export default function MessagingGuidePage() {
     } finally {
       setIsLoading(false);
     }
-  }, [campaignId, navigate, toast, location.search, user, authLoading]); // Keep user & authLoading as dependencies
+  }, [campaignId, navigate, toast, location.search]);
 
   useEffect(() => {
-    // This effect will now re-run if authLoading or user changes.
-    // If authLoading was true, loadDataAndGenerateGuide will return early.
-    // Once authLoading is false and user is available (or null), it will proceed.
     loadDataAndGenerateGuide();
-  }, [loadDataAndGenerateGuide]); // loadDataAndGenerateGuide is memoized with its own deps
+  }, [loadDataAndGenerateGuide]);
 
   const handleDownload = () => {
-    // ... (download logic remains the same)
     if (!step1Analysis && !messagingGuide) {
       if (toast) toast({
         variant: "destructive",
@@ -278,19 +257,8 @@ export default function MessagingGuidePage() {
     }
     navigate(`/app/campaign/${campaignId}/action-plan`);
   };
-  
-  if (authLoading) { // Check authLoading first
-      return (
-        <div className="container mx-auto p-6 text-center">
-          <Card className="max-w-2xl mx-auto">
-            <CardHeader><CardTitle>Authenticating...</CardTitle></CardHeader>
-            <CardContent><p>Please wait while we verify your session.</p></CardContent>
-          </Card>
-        </div>
-      );
-  }
-  
-  if (isLoading) { // Then check general isLoading (for data/guide gen)
+
+  if (isLoading) {
     return (
       <div className="container mx-auto p-6 text-center">
         <Card className="max-w-2xl mx-auto">
@@ -301,11 +269,11 @@ export default function MessagingGuidePage() {
     );
   }
 
-  if (error && !isLoading) { // Error display should also only be when not primary loading
+  if (error && !isLoading) {
     return (
       <div className="container mx-auto p-6">
         <Alert variant="destructive" className="max-w-2xl mx-auto">
-          <ExternalLink className="h-4 w-4" />
+          <ExternalLink className="h-4 w-4" /> {/* Icon for alert */}
           <AlertTitle>Error Encountered</AlertTitle>
           <AlertDescription>{error}</AlertDescription>
           <div className="mt-4 space-x-2">
@@ -361,7 +329,7 @@ export default function MessagingGuidePage() {
         </Card>
       )}
       
-      {!isLoading && !authLoading && !error && !step1Analysis && !messagingGuide && ( // Added !authLoading here
+      {!isLoading && !error && !step1Analysis && !messagingGuide && (
          <div className="container mx-auto p-6 text-center">
          <Card className="max-w-2xl mx-auto">
           <CardHeader><CardTitle>Messaging Guide</CardTitle></CardHeader>

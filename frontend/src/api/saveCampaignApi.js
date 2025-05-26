@@ -1,11 +1,27 @@
 // frontend/src/api/saveCampaignApi.js
+import { getAuth, getIdToken } from 'firebase/auth'; // <<< 1. IMPORT FIREBASE AUTH FUNCTIONS
+
 // Corrected to align with backend save-campaign.js which expects 'id' in the payload top-level
 export async function saveCampaignProgress(currentCampaignId, data) {
   try {
+    const auth = getAuth(); // <<< 2. GET AUTH INSTANCE
+    const user = auth.currentUser; // <<< 3. GET CURRENT USER
+
+    if (!user) { // <<< 4. CHECK IF USER IS LOGGED IN
+      console.error("saveCampaignApi.js: User not logged in.");
+      throw new Error("User not authenticated. Please log in.");
+    }
+
+    const token = await getIdToken(user); // <<< 5. GET THE ID TOKEN
+
+    if (!token) { // <<< 6. CHECK IF TOKEN WAS RETRIEVED
+        console.error("saveCampaignApi.js: Could not retrieve Firebase ID token.");
+        throw new Error("Authentication token could not be retrieved.");
+    }
+
     const payload = {
-      ...data, // This should contain summary, classification, goals from CampaignContext
-      campaignId: currentCampaignId, // Send the currentCampaignId as 'id' in the payload.
-                            // Backend will use this 'id' or generate one if it's null/undefined.
+      ...data,
+      campaignId: currentCampaignId,
     };
 
     console.log("saveCampaignApi.js: Sending payload to /api/save-campaign:", JSON.stringify(payload, null, 2));
@@ -14,11 +30,12 @@ export async function saveCampaignProgress(currentCampaignId, data) {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`, // <<< 7. ADD AUTHORIZATION HEADER
       },
       body: JSON.stringify(payload),
     });
 
-    const responseData = await response.json(); // Try to parse JSON regardless of status
+    const responseData = await response.json();
 
     if (!response.ok) {
       const errorMessage = responseData.error || `Failed to save campaign progress. Status: ${response.status}`;
@@ -27,7 +44,7 @@ export async function saveCampaignProgress(currentCampaignId, data) {
     }
     
     console.log("saveCampaignApi.js: Save successful, responseData:", responseData);
-    return responseData; // Expected: { success: true, id: campaignId }
+    return responseData;
   } catch (e) {
     console.error("Error in saveCampaignProgress function:", e.message);
     throw e; 

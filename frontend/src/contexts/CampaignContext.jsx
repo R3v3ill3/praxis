@@ -1,8 +1,8 @@
 // frontend/src/contexts/CampaignContext.jsx
 import React, { createContext, useContext, useState, useCallback, useMemo } from 'react';
-import { useToast } from '../components/ui/use-toast'; // Adjust path as needed
-import { saveCampaignProgress } from '../api/saveCampaignApi'; // Ensure this path is correct
-import { useAuth } from './AuthContext'; // Ensure this path is correct
+import { useToast } from '../components/ui/use-toast';
+import { saveCampaignProgress } from '../api/saveCampaignApi';
+import { useAuth } from './AuthContext'; // Stays the same
 
 const CampaignContext = createContext();
 
@@ -14,7 +14,6 @@ export const useCampaign = () => {
   return ctx;
 };
 
-// This should be the single source of truth for the initial structure
 const initialMessagingInputsState = {
   issueName: '',
   proposedChange: '',
@@ -38,37 +37,17 @@ const initialMessagingInputsState = {
 };
 
 export const CampaignProvider = ({ children }) => {
-  // --- START TEMPORARY MOCK DATA FOR DIRECT TESTING ---
-  // TODO: Remove/comment out these initializations for production/full app flow
-  const [campaignId, setCampaignIdInternal] = useState("test-campaign-id-direct-messaging"); // Renamed to avoid conflict in saveCurrentCampaignState
-  const [summary, setSummary] = useState({
-    purpose: "Direct Test: Fight for Fair Wages",
-    location: "Direct Test: NSW Health",
-    audience: "Direct Test: Nurses and Hospital Staff",
-    intent: "Direct Test: Negotiate a better enterprise agreement",
-    target: "Direct Test: NSW Labor Government",
-    problem: "Direct Test: Stagnant wages and poor conditions",
-    proposedChange: "Direct Test: Implement a 15% pay rise and improved staffing ratios"
-  });
-  const [classification, setClassification] = useState({
-    primary_type: "Workplace & Union",
-    secondary_type: "Industrial Action",
-    use_case: "Enterprise Bargaining",
-    type_id: "workplace_union",
-    subtype_id: "workplace_union_industrial_action",
-    id: "wu_ia_eb"
-  });
-  const [goals, setGoals] = useState([
-    { id: "goal1_direct", label: "Achieve a 15% pay rise", rank: 1 },
-    { id: "goal2_direct", label: "Improve staffing ratios", rank: 2 },
-    { id: "goal3_direct", label: "secure government funding", rank: 3 },
-  ]);
+  // --- TEMPORARY MOCK DATA ---
+  const [campaignId, setCampaignIdInternal] = useState(null); // MODIFIED: Start with null, no mock
+  const [summary, setSummary] = useState(null); // MODIFIED: Start with null
+  const [classification, setClassification] = useState(null); // MODIFIED: Start with null
+  const [goals, setGoals] = useState([]); // MODIFIED: Start with empty
   const [messagingInputs, setMessagingInputs] = useState(JSON.parse(JSON.stringify(initialMessagingInputsState)));
   // --- END TEMPORARY MOCK DATA ---
 
   const [classificationGuess, setClassificationGuess] = useState(null);
   const { toast } = useToast();
-  const { user } = useAuth();
+  const { user, loading: authLoading } = useAuth(); // MODIFIED: Get 'loading' as 'authLoading'
 
   const updateCampaignData = useCallback((data) => {
     console.log("✅ CTX UPDATE: updateCampaignData called with:", data);
@@ -88,33 +67,15 @@ export const CampaignProvider = ({ children }) => {
 
   const resetCampaignData = useCallback(() => {
     console.log("✅ CTX RESET: resetCampaignData called");
-    if (process.env.NODE_ENV === 'development' && campaignId === "test-campaign-id-direct-messaging") {
-        setCampaignIdInternal("test-campaign-id-direct-messaging");
-        setSummary({
-            purpose: "Direct Test: Fight for Fair Wages", location: "Direct Test: City Hospital",
-            audience: "Direct Test: Nurses and Hospital Staff", intent: "Direct Test: Negotiate a better enterprise agreement",
-            target: "Direct Test: Hospital Management/Board", problem: "Direct Test: Stagnant wages and poor conditions",
-            proposedChange: "Direct Test: Implement a 15% pay rise and improved staffing ratios"
-        });
-        setClassification({
-            primary_type: "Workplace & Union", secondary_type: "Industrial Action", use_case: "Enterprise Bargaining",
-            type_id: "workplace_union", subtype_id: "workplace_union_industrial_action", id: "wu_ia_eb"
-        });
-        setGoals([
-            { id: "goal1_direct", label: "Achieve a 6% pay rise", rank: 1 },
-            { id: "goal2_direct", label: "Improve staffing ratios", rank: 2 },
-            { id: "goal3_direct", label: "Increase union membership", rank: 3 },
-        ]);
-        setMessagingInputs(JSON.parse(JSON.stringify(initialMessagingInputsState)));
-    } else {
-        setCampaignIdInternal(null);
-        setSummary(null);
-        setClassification(null);
-        setClassificationGuess(null);
-        setGoals([]);
-        setMessagingInputs(JSON.parse(JSON.stringify(initialMessagingInputsState)));
-    }
-  }, [campaignId]);
+    // MODIFIED: Simplified reset, remove dev-specific mock data re-population here
+    // Let it reset to true initial empty/null states
+    setCampaignIdInternal(null);
+    setSummary(null);
+    setClassification(null);
+    setClassificationGuess(null);
+    setGoals([]);
+    setMessagingInputs(JSON.parse(JSON.stringify(initialMessagingInputsState)));
+  }, []);
 
   const updateMessagingInputs = useCallback((newInputsFromChat) => {
     console.log("CTX: updateMessagingInputs called with:", newInputsFromChat);
@@ -132,23 +93,32 @@ export const CampaignProvider = ({ children }) => {
   }, []);
 
   const saveCurrentCampaignState = useCallback(async (currentStepDescription, dataOverride = null) => {
-    // Get current state values from context for preparing the data
-    const idFromContext = campaignId; // This is the 'campaignId' from context's useState
+    // MODIFIED: Add checks for authLoading and user
+    if (authLoading) {
+      console.warn("CampaignContext: Auth state still loading. Save operation aborted for step:", currentStepDescription);
+      toast({ variant: "destructive", title: "Save Error", description: "Authentication pending, please try again shortly." });
+      return null;
+    }
+
+    if (!user) {
+      console.error("CampaignContext: No authenticated user. Save operation aborted for step:", currentStepDescription);
+      toast({ variant: "destructive", title: "Save Error", description: "You must be logged in to save." });
+      return null;
+    }
+    // END MODIFIED CHECKS
+
+    const idFromContext = campaignId;
     const summaryFromContext = summary;
     const classificationFromContext = classification;
     const goalsFromContext = goals;
     const messagingInputsFromContext = messagingInputs;
 
-    // Determine the values to use for saving, preferring dataOverride if provided
     const idForPayload = dataOverride?.campaignId ?? idFromContext;
     const summaryForPayload = dataOverride?.summary ?? summaryFromContext;
     const classificationForPayload = dataOverride?.classification ?? classificationFromContext;
     const goalsForPayload = dataOverride?.goals ?? goalsFromContext;
     const messagingInputsForPayload = dataOverride?.messaging_inputs ?? messagingInputsFromContext;
 
-//    if (!idForPayload || !summaryForPayload || !classificationForPayload || !goalsForPayload) {
-//      toast({ variant: "destructive", title: "Save Error", description: `Cannot save: core data (ID, summary, classification, or goals) missing for step: ${currentStepDescription}.` });
-//      console.error("CTX: Save Error - Missing core data", {idForPayload, summaryForPayload, classificationForPayload, goalsForPayload});
     if (!summaryForPayload || !classificationForPayload || !goalsForPayload || goalsForPayload.length === 0) {
       toast({ variant: "destructive", title: "Save Error", description: `Cannot save: core data (summary, classification, or goals) missing or goals are empty for step: ${currentStepDescription}.` });
       console.error("CTX: Save Error - Missing summary, classification, or non-empty goals:", {idForPayload, summaryForPayload, classificationForPayload, goalsForPayload});
@@ -159,68 +129,53 @@ export const CampaignProvider = ({ children }) => {
                                    ? messagingInputsForPayload
                                    : initialMessagingInputsState;
 
-    const campaignDataForApi = { // This is the 'data' argument for saveCampaignProgress
+    const campaignDataForApi = {
       summary: summaryForPayload,
       classification: classificationForPayload,
       goals: goalsForPayload,
       messaging_inputs: finalMessagingInputsForPayload,
     };
     
-    console.log("CTX: Calling saveCampaignProgress with ID:", idForPayload, "and data:", campaignDataForApi, "for step:", currentStepDescription);
+    console.log(`CTX: Calling saveCampaignProgress for user ${user.uid} with ID:`, idForPayload, "and data:", campaignDataForApi, "for step:", currentStepDescription);
 
     try {
-      // saveCampaignProgress now correctly sends 'campaignId: idForPayload' in its body
       const responseData = await saveCampaignProgress(idForPayload, campaignDataForApi); 
-      
-      const confirmedCampaignId = responseData.id; // ID confirmed by the backend
+      const confirmedCampaignId = responseData.id;
 
       toast({ title: "Campaign Progress Saved", description: `${currentStepDescription}. ID: ${confirmedCampaignId}` });
 
-      // --- START OF MODIFIED/ADDED SECTION ---
-
-      // 1. Update CampaignContext's internal 'campaignId' state if the confirmed ID is different
-      //    or if the context's campaignId was initially null.
       if (confirmedCampaignId && (idFromContext !== confirmedCampaignId || idFromContext === null)) {
         console.log(`CTX: Updating campaignId in context state from ${idFromContext} to ${confirmedCampaignId}`);
-        setCampaignIdInternal(confirmedCampaignId); // Use the internal setter for campaignId state
+        setCampaignIdInternal(confirmedCampaignId);
       }
       
-      // 2. Prepare the complete data object to store in localStorage
       const fullCampaignDataForLocalStorage = {
-        id: confirmedCampaignId, // CRITICAL: Use the ID confirmed by the backend
+        id: confirmedCampaignId,
         summary: summaryForPayload,
         classification: classificationForPayload,
         goals: goalsForPayload,
         messaging_inputs: finalMessagingInputsForPayload,
-        // Include any other parts of the campaign state that MessagingGuidePage might need
-        // For instance, if 'classificationGuess' is also managed by context and needed later:
-        // classificationGuess: classificationGuess, // (Make sure classificationGuess is in scope or fetched similarly)
       };
 
-      // 3. Save to localStorage using the confirmedCampaignId
       const localStorageKey = `campaign-${confirmedCampaignId}`;
       localStorage.setItem(localStorageKey, JSON.stringify(fullCampaignDataForLocalStorage));
       console.log(`CTX: Successfully saved campaign data to localStorage with key: ${localStorageKey}`, fullCampaignDataForLocalStorage);
 
-      // --- END OF MODIFIED/ADDED SECTION ---
-
-      return confirmedCampaignId; // Return the ID that was saved/confirmed
+      return confirmedCampaignId;
     } catch (error) {
       toast({ variant: "destructive", title: "Save Error", description: error.message || `Failed to save ${currentStepDescription}.`});
       console.error("CTX: Save Error:", error);
       return null;
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
-    campaignId, // This is the 'campaignId' from context state (now set by setCampaignIdInternal)
+    campaignId, 
     summary, 
     classification, 
     goals, 
     messagingInputs, 
-    user, // Make sure 'user' is actually used or remove if not a dependency for this specific callback
-    toast, 
-    // updateCampaignData is removed as setCampaignIdInternal is used directly
-    // initialMessagingInputsState (if it were used directly for defaults within the callback)
+    user, // user is now explicitly checked
+    authLoading, // MODIFIED: Add authLoading as a dependency
+    toast,
   ]);
 
   const initialMessagingInputsForContext = useMemo(() => JSON.parse(JSON.stringify(initialMessagingInputsState)), []);
@@ -228,7 +183,7 @@ export const CampaignProvider = ({ children }) => {
   return (
     <CampaignContext.Provider
       value={{
-        campaignId, // Expose the campaignId state
+        campaignId,
         summary,
         classification,
         classificationGuess,

@@ -2,10 +2,8 @@
 import express from 'express';
 import { db } from '../firebase.js'; // Ensure this path is correct for your Firebase admin init
 import { Timestamp } from 'firebase-admin/firestore';
-import authMiddleware from '../middleware/authMiddleware.js'; // <<< 1. IMPORT AUTH MIDDLEWARE
 
 const router = express.Router();
-router.use(authMiddleware); // <<< 2. APPLY AUTH MIDDLEWARE TO ALL ROUTES IN THIS FILE
 
 /**
  * Helper function to save/update campaign data in Firestore.
@@ -19,6 +17,7 @@ async function storeCampaignInFirestore(campaignId, campaignData, isNewCampaign)
     console.error("(ERROR) [/api/save-campaign] Firestore DB instance is not available.");
     throw new Error("Firestore service is unavailable.");
   }
+  // campaignId is now guaranteed to be a non-empty string by the route handler.
 
   const docRef = db.collection('campaigns').doc(campaignId);
 
@@ -31,14 +30,17 @@ async function storeCampaignInFirestore(campaignId, campaignData, isNewCampaign)
     dataToSave.createdAt = Timestamp.now(); // Add createdAt timestamp for new campaigns
   }
 
+  // Use merge: true to update existing fields or create the document if it doesn't exist with all fields.
+  // If isNewCampaign is true, it's effectively a create.
+  // If isNewCampaign is false, it's an update (merge will update existing fields and add new ones).
   await docRef.set(dataToSave, { merge: true });
   console.log(`(INFO) [/api/save-campaign] Campaign data for ID: ${campaignId} ${isNewCampaign ? 'created' : 'merged'} successfully.`);
-  return { success: true, id: campaignId };
+  return { success: true, id: campaignId }; // Return the campaignId used
 }
 
 // Route to handle saving (creating new or updating existing) campaign progress
 router.post('/', async (req, res) => {
-  console.log("(INFO) [/api/save-campaign] Endpoint hit. Body:", JSON.stringify(req.body, null, 2));
+  console.log("(INFO) [/api/save-campaign] Endpoint hit. Body:", req.body);
   
   let { // Use 'let' because campaignId might be (re)assigned
     campaignId, 
@@ -47,56 +49,62 @@ router.post('/', async (req, res) => {
     goals, 
     messaging_inputs,
     step1Analysis,
-    messagingGuide,
-    name // Assuming 'name' might also be part of the campaign data
+    messagingGuide
     // Add any other top-level fields you expect in the campaign document
   } = req.body;
 
   let isNewCampaign = false;
 
+  // If campaignId is not provided (falsy: null, undefined, empty string),
+  // it's a new campaign, so generate an ID.
   if (!campaignId) {
     campaignId = db.collection('campaigns').doc().id; // Generate a new unique ID
     isNewCampaign = true;
     console.log(`(INFO) [/api/save-campaign] No campaignId from client. Generated new ID: ${campaignId}`);
   }
 
+  // Construct the payload with only the fields that are present in the request.
   const campaignDataPayload = {};
   if (summary !== undefined) campaignDataPayload.summary = summary;
   if (classification !== undefined) campaignDataPayload.classification = classification;
-  if (goals !== undefined) campaignDataPayload.goals = goals;
+  if (goals !== undefined) campaignDataPayload.goals = goals; // Assuming goals is an array or object
   if (messaging_inputs !== undefined) campaignDataPayload.messaging_inputs = messaging_inputs;
   if (step1Analysis !== undefined) campaignDataPayload.step1Analysis = step1Analysis;
   if (messagingGuide !== undefined) campaignDataPayload.messagingGuide = messagingGuide;
-  if (name !== undefined) campaignDataPayload.name = name; // Include campaign name if provided
+  
+  // Add userId if available in request (e.g. from auth middleware if you implement it)
+  // This is an example, adapt if you have user auth
+  // if (req.user && req.user.uid) {
+  //   campaignDataPayload.userId = req.user.uid;
+  //   if (isNewCampaign) { // Only add createdByUserId if it's a new campaign and you have a user
+  //     campaignDataPayload.createdByUserId = req.user.uid;
+  //   }
+  // }
 
-  // <<< 3. ADD/VERIFY userId FROM AUTHENTICATED USER >>>
-  if (req.user && req.user.uid) {
-    campaignDataPayload.userId = req.user.uid;
-    console.log(`(INFO) [/api/save-campaign] Operation for campaignId: ${campaignId} by userId: ${req.user.uid}.`);
-  } else {
-    // This block should ideally not be reached if authMiddleware is correctly applied
-    // and rejects unauthenticated requests.
-    console.error(`(ERROR) [/api/save-campaign] Critical: No authenticated user (req.user.uid) found for campaignId: ${campaignId}. This indicates an issue with authentication middleware setup or an unauthenticated request reaching this point.`);
-    return res.status(401).json({ error: 'User authentication is required to save a campaign. User ID is missing.' });
-  }
-
-  // Check if there's any actual campaign content data to save, besides potentially userId.
-  // Create a temporary object for this check, excluding userId.
-  const contentFieldsToCheck = { ...campaignDataPayload };
-  delete contentFieldsToCheck.userId;
-
-  if (Object.keys(contentFieldsToCheck).length === 0 && !isNewCampaign) {
-    console.warn(`(WARN) [/api/save-campaign] No new content data fields provided to update for existing campaignId: ${campaignId} by userId: ${req.user.uid}. Proceeding to update timestamp and ensure userId consistency.`);
-    // Even if no other fields changed, we proceed to ensure `updatedAt` is set and `userId` is affirmed.
+  // It's okay to create a new campaign with minimal data (e.g., just an ID and timestamps).
+  // But for updates, we might expect some data.
+  if (Object.keys(campaignDataPayload).length === 0 && !isNewCampaign) {
+    console.warn(`(WARN) [/api/save-campaign] No actual data fields provided to update for existing campaignId: ${campaignId}. Sending success as nothing to change.`);
+    // Depending on desired behavior, you could return success or a specific notice.
+    // For now, let's assume an update with no changed fields is still a "success" in terms of the operation completing.
+    // Or, you could return a 204 No Content or a 400 if you require data for updates.
+    // Let's return success with the ID.
+    return res.status(200).json({ 
+        success: true, 
+        id: campaignId, 
+        message: `No data fields provided to update for campaign ${campaignId}. Operation successful.` 
+    });
   }
 
   try {
-    console.log(`(INFO) [/api/save-campaign] Attempting to ${isNewCampaign ? 'create' : 'update'} campaign ID: ${campaignId}. Payload includes keys: ${Object.keys(campaignDataPayload).join(', ')}`);
-    await storeCampaignInFirestore(campaignId, campaignDataPayload, isNewCampaign);
+    console.log(`(INFO) [/api/save-campaign] Attempting to ${isNewCampaign ? 'create' : 'update'} campaign ID: ${campaignId} with payload fields:`, Object.keys(campaignDataPayload));
+    // Pass campaignId (which is now guaranteed to be a string) and isNewCampaign flag
+    const result = await storeCampaignInFirestore(campaignId, campaignDataPayload, isNewCampaign);
     
+    // Ensure the response to the client includes the campaignId, especially the newly generated one
     return res.status(200).json({
       success: true,
-      id: campaignId,
+      id: campaignId, // Send back the ID (new or existing)
       message: `Campaign ${isNewCampaign ? 'created' : 'updated'} successfully.`
     });
   } catch (error) {
